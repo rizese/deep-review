@@ -24,8 +24,8 @@ import {
   prMountPath,
   type AddOptions,
   type BuildPr,
-  type BuiltPr,
   type PrFacts,
+  type RegistryOptions,
   type PrRef,
   type PrView,
 } from "./registry.js";
@@ -61,10 +61,10 @@ export interface NavServerOptions {
   /** Let a PR's language services go after this long with no question asked. */
   sessionIdleMs?: number | undefined;
   onProgress?: ((message: string) => void) | undefined;
-  /** Where the registry remembers its ready PRs between runs; see `RegistryOptions.stateFile`. */
-  stateFile?: string | undefined;
-  /** Re-renders a restored PR's page from its input; see `RegistryOptions.rerender`. */
-  rerender?: ((built: BuiltPr) => string) | undefined;
+  /** Where PRs are remembered between runs and how their pages come back; see `RegistryOptions.persistence`. */
+  persistence?: RegistryOptions["persistence"];
+  /** Release a dropped PR's checkouts; see `RegistryOptions.onRemoved`. */
+  onRemoved?: RegistryOptions["onRemoved"];
 }
 
 export interface NavServer {
@@ -156,8 +156,8 @@ export async function startNavServer(options: NavServerOptions): Promise<NavServ
     ...(options.concurrency !== undefined ? { concurrency: options.concurrency } : {}),
     ...(options.sessionGraceMs !== undefined ? { sessionGraceMs: options.sessionGraceMs } : {}),
     ...(options.sessionIdleMs !== undefined ? { sessionIdleMs: options.sessionIdleMs } : {}),
-    ...(options.stateFile !== undefined ? { stateFile: options.stateFile } : {}),
-    ...(options.rerender !== undefined ? { rerender: options.rerender } : {}),
+    ...(options.persistence !== undefined ? { persistence: options.persistence } : {}),
+    ...(options.onRemoved !== undefined ? { onRemoved: options.onRemoved } : {}),
     onProgress: log,
   });
 

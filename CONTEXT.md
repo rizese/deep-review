@@ -129,8 +129,13 @@ services start on the first symbol click and are let go when idle or when
 the page leaves; the built page itself stays. Builds are keyed by the PR's
 head commit: re-adding a PR whose head has not moved returns the build
 already here (after a restart, the kept slice JSON — no model call), while
-a moved head drops the stale build and remakes it. The daemon's clones and
-worktrees live under the state dir (`work/`), not the tmp dir macOS purges.
+a moved head drops the stale build and remakes it. Builds run in a child
+process (`buildWorker.ts`), so the server keeps answering while one clones
+or analyzes. Ready and failed PRs are remembered as one JSON file each under
+the state dir (`prs/`, holding the build's input, never its HTML; pages are
+re-rendered on restart). Clones and worktrees live under `work/<owner>/<repo>`:
+one clone per repo, one worktree per commit, released when the last PR that
+needs them is retired.
 
 **Chrome**:
 The frame every page sits in: the pool — a light-blue (or, at night, deep-blue)

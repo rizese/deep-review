@@ -12,13 +12,14 @@
  * What was built is kept on disk too. A server lives for weeks and is
  * restarted for the most ordinary reasons — a new version, a reboot — and
  * without a memory every restart emptied the index and cost a slicing run
- * per PR to refill it. The ready PRs are written to one JSON file under the
- * state dir whenever the set of them changes, and read back when the
+ * per PR to refill it. Ready and failed PRs are written to a `PrStore` (one
+ * file per PR; see store.ts) as they change, and read back when the
  * registry is made, so a restart resumes with the same pages and no builds.
+ * The page itself is not stored: it is re-rendered from the input, so a new
+ * version of the renderer shows on old PRs too.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import path from "node:path";
+import { existsSync } from "node:fs";
 import {
   explorerSize,
   NavSession,
@@ -26,6 +27,7 @@ import {
   type SliceExplorerInput,
 } from "@deep-review/call-graph";
 import { prUrl, type PrRef, type PrRole } from "@deep-review/pr";
+import type { PrStore, StoredBuild, StoredPr } from "./store.js";
 
 export type { PrRef, PrRole } from "@deep-review/pr";
 
@@ -142,6 +144,15 @@ export interface BuiltPr {
   html: string;
   /** The head commit this build was made from; a moved head means a stale build. */
   headSha?: string | undefined;
+  /** The merge-base commit the base checkout is at; with headSha, the two worktrees this build keeps alive. */
+  baseSha?: string | undefined;
+}
+
+/** What a PR's build holds on disk: its checkouts, by directory and by commit. */
+export interface CheckoutRef extends PrRef {
+  headDir?: string | undefined;
+  headSha?: string | undefined;
+  baseSha?: string | undefined;
 }
 
 /** Per-PR knobs, carried from the request that added it. */
@@ -178,19 +189,18 @@ export interface RegistryOptions {
   logLimit?: number | undefined;
   onProgress?: ((message: string) => void) | undefined;
   /**
-   * Where the ready PRs are remembered between runs. Read once when the
-   * registry is made, written whenever the set of ready PRs changes. Absent,
-   * the registry forgets everything on exit, as a `--no-daemon` run should.
+   * Where PRs are remembered between runs, and how to get a page back from
+   * what was stored: the store keeps a build's input, not its HTML, so each
+   * restored PR is rendered afresh — in this version's chrome, whatever
+   * version wrote it. Absent, the registry forgets everything on exit.
    */
-  stateFile?: string | undefined;
+  persistence?: { store: PrStore; render: (built: StoredBuild) => string } | undefined;
   /**
-   * The page for a build, from what the build produced. Applied to each PR
-   * restored from the state file, so a page that outlives a new version of
-   * the renderer comes back in the new version's chrome rather than the
-   * one it was written with; the saved HTML is only a fallback for when
-   * this is absent.
+   * Called after a PR is dropped, with what it held on disk and what every
+   * PR still here holds, so its checkouts can be released without taking a
+   * worktree another PR shares. The registry itself touches no checkout.
    */
-  rerender?: ((built: BuiltPr) => string) | undefined;
+  onRemoved?: ((removed: CheckoutRef, remaining: CheckoutRef[]) => void) | undefined;
 }
 
 interface Entry extends PrRef {
@@ -202,6 +212,7 @@ interface Entry extends PrRef {
   addedAt: number;
   readyAt?: number;
   error?: string;
+  failedAt?: number;
   log: string[];
   built?: BuiltPr;
   session?: NavSession;
@@ -211,60 +222,15 @@ interface Entry extends PrRef {
   release?: NodeJS.Timeout;
 }
 
-/**
- * One ready PR as written to the state file: what identifies it, what it was
- * added with, and what the build produced — everything `view()` and
- * `sessionFor()` read, and nothing a build would have to redo. A session is
- * not here; it never survived a page reload either, and is remade from
- * `built.headDir` on the first click.
- */
-interface SavedPr extends PrRef {
-  options: AddOptions;
-  /** Absent in state files written before facts existed: then it is a review PR, approval unknown. */
-  facts?: PrFacts | undefined;
-  addedAt: number;
-  readyAt: number;
-  built: BuiltPr;
-}
-
-interface SavedRegistry {
-  version: 1;
-  prs: SavedPr[];
-}
-
-/** The state file's records, or none: a file that cannot be read is an empty memory, not a failed start. */
-function readSavedPrs(file: string): SavedPr[] {
-  try {
-    const parsed = JSON.parse(readFileSync(file, "utf8")) as Partial<SavedRegistry>;
-    if (!Array.isArray(parsed.prs)) return [];
-    return parsed.prs.filter(isSavedPr);
-  } catch {
-    // No file, or one we cannot read: an empty memory is the safe start —
-    // the worst it costs is the builds a restart cost before this existed.
-    return [];
-  }
-}
-
-/** Enough of a record's shape to trust it; a half-written file yields nothing rather than a crash later. */
-function isSavedPr(record: unknown): record is SavedPr {
-  if (typeof record !== "object" || record === null) return false;
-  const r = record as Partial<SavedPr>;
-  return (
-    typeof r.owner === "string" &&
-    typeof r.repo === "string" &&
-    Number.isInteger(r.number) &&
-    typeof r.addedAt === "number" &&
-    typeof r.readyAt === "number" &&
-    typeof r.options === "object" &&
-    r.options !== null &&
-    typeof r.built === "object" &&
-    r.built !== null &&
-    typeof r.built.headDir === "string" &&
-    typeof r.built.html === "string" &&
-    typeof r.built.input === "object" &&
-    r.built.input !== null &&
-    Array.isArray(r.built.input.slices)
-  );
+function checkoutOf(entry: Entry): CheckoutRef {
+  return {
+    owner: entry.owner,
+    repo: entry.repo,
+    number: entry.number,
+    ...(entry.built?.headDir ? { headDir: entry.built.headDir } : {}),
+    ...(entry.built?.headSha ? { headSha: entry.built.headSha } : {}),
+    ...(entry.built?.baseSha ? { baseSha: entry.built.baseSha } : {}),
+  };
 }
 
 /** The facts a caller actually stated: an undefined field means "no news", not "unset". */
@@ -291,8 +257,8 @@ export class PrRegistry {
   private readonly sessionIdleMs: number;
   private readonly logLimit: number;
   private readonly log: (message: string) => void;
-  private readonly stateFile: string | null;
-  private readonly rerender: ((built: BuiltPr) => string) | null;
+  private readonly persistence: { store: PrStore; render: (built: StoredBuild) => string } | null;
+  private readonly onRemoved: ((removed: CheckoutRef, remaining: CheckoutRef[]) => void) | null;
   /** Keys waiting for a build slot, in the order they were added. */
   private readonly queue: PrKey[] = [];
   private building = 0;
@@ -306,9 +272,9 @@ export class PrRegistry {
     this.sessionIdleMs = options.sessionIdleMs ?? DEFAULTS.sessionIdleMs;
     this.logLimit = options.logLimit ?? DEFAULTS.logLimit;
     this.log = options.onProgress ?? (() => {});
-    this.stateFile = options.stateFile ?? null;
-    this.rerender = options.rerender ?? null;
-    if (this.stateFile) this.restore(this.stateFile);
+    this.persistence = options.persistence ?? null;
+    this.onRemoved = options.onRemoved ?? null;
+    if (this.persistence) this.restore();
     // An idle session is worth reclaiming but not worth watching closely;
     // a sweep at a fraction of the idle window is close enough.
     if (this.sessionIdleMs > 0) {
@@ -378,9 +344,9 @@ export class PrRegistry {
       this.log(`${entry.key}: ${facts.approved ? `approved${by}` : "no longer approved"}.`);
     }
     entry.facts = next;
-    // Facts ride in the state file with the build, so a restart keeps a PR
-    // on the right tab rather than defaulting it back to "review".
-    if (entry.state === "ready") this.persist();
+    // Facts are stored with the build, so a restart keeps a PR on the right
+    // tab rather than defaulting it back to "review".
+    this.persist(entry);
   }
 
   list(): PrView[] {
@@ -392,6 +358,11 @@ export class PrRegistry {
   /** How many PRs are held, without building a view of each. */
   count(): number {
     return this.entries.size;
+  }
+
+  /** Every held PR's checkouts, for whoever keeps the work directory tidy. */
+  checkouts(): CheckoutRef[] {
+    return [...this.entries.values()].map(checkoutOf);
   }
 
   /** The rendered page, or null while the PR is not ready. */
@@ -463,10 +434,17 @@ export class PrRegistry {
     const queued = this.queue.indexOf(key);
     if (queued !== -1) this.queue.splice(queued, 1);
     this.entries.delete(key);
-    // Written now, not at the next build: the watcher removes a PR once it
-    // is merged or closed, and a snapshot that still held it would put it
-    // back on the index at the next restart.
-    this.persist();
+    // Forgotten on disk now, not at the next build: the watcher removes a
+    // PR once it is merged or closed, and a record that still held it would
+    // put it back on the index at the next restart.
+    this.persistence?.store.remove(entry);
+    if (this.onRemoved) {
+      try {
+        this.onRemoved(checkoutOf(entry), this.checkouts());
+      } catch (error) {
+        this.log(`${key}: cleanup failed — ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
     return true;
   }
 
@@ -547,73 +525,82 @@ export class PrRegistry {
       if (!this.entries.has(entry.key)) return;
       entry.state = "failed";
       entry.error = error instanceof Error ? error.message : String(error);
+      entry.failedAt = Date.now();
       note(`failed — ${entry.error}`);
     }
-    this.persist();
+    this.persist(entry);
   }
 
   /**
-   * Take the previous run's ready PRs as this run's, straight into the
-   * table: no queue, no build. Their checkouts are not checked here — a
-   * page needs none, and the first click that does finds out (sessionFor).
+   * Take the stored PRs as this run's, straight into the table: no queue, no
+   * build. A ready PR's page is rendered now from its stored input; one
+   * whose render throws is skipped with a note, since a PR with no page is
+   * not ready. A failed PR comes back failed, with its reason, so it can be
+   * retried rather than forgotten. Checkouts are not checked here — a page
+   * needs none, and the first click that does finds out (sessionFor).
    */
-  private restore(file: string): void {
-    for (const saved of readSavedPrs(file)) {
-      const key = prKey(saved);
-      // Re-rendered rather than replayed: the input is the truth about the
-      // PR, the HTML is this version's way of showing it. A render that
-      // throws keeps the saved page — a stale page beats a missing one.
-      let built = saved.built;
-      if (this.rerender) {
-        try {
-          built = { ...saved.built, html: this.rerender(saved.built) };
-        } catch (error) {
-          this.log(`${key}: could not re-render — ${error instanceof Error ? error.message : String(error)}`);
-        }
-      }
-      const entry: Entry = {
-        owner: saved.owner,
-        repo: saved.repo,
-        number: saved.number,
-        prUrl: prUrl(saved),
+  private restore(): void {
+    if (!this.persistence) return;
+    let restored = 0;
+    for (const stored of this.persistence.store.load()) {
+      const key = prKey(stored);
+      const base = {
+        owner: stored.owner,
+        repo: stored.repo,
+        number: stored.number,
+        prUrl: prUrl(stored),
         key,
-        state: "ready",
-        options: saved.options,
-        facts: saved.facts ?? {},
-        addedAt: saved.addedAt,
-        readyAt: saved.readyAt,
-        log: [`restored from ${path.basename(file)} — built in a previous run.`],
-        built,
+        options: stored.options,
+        facts: stored.facts,
+        addedAt: stored.addedAt,
         lastUsed: Date.now(),
       };
-      this.entries.set(key, entry);
+      if (stored.state === "ready" && stored.built) {
+        let html: string;
+        try {
+          html = this.persistence.render(stored.built);
+        } catch (error) {
+          this.log(`${key}: could not render the stored build — ${error instanceof Error ? error.message : String(error)}; skipped.`);
+          continue;
+        }
+        this.entries.set(key, {
+          ...base,
+          state: "ready",
+          readyAt: stored.readyAt ?? stored.addedAt,
+          log: ["restored — built in a previous run."],
+          built: { ...stored.built, html },
+        });
+      } else {
+        this.entries.set(key, {
+          ...base,
+          state: "failed",
+          error: stored.error ?? "failed in a previous run",
+          ...(stored.failedAt !== undefined ? { failedAt: stored.failedAt } : {}),
+          log: [`restored — failed in a previous run: ${stored.error ?? "unknown reason"}`],
+        });
+      }
+      restored++;
     }
-    if (this.entries.size > 0) {
-      this.log(`restored ${this.entries.size} ready PR${this.entries.size === 1 ? "" : "s"} from ${file}.`);
-    }
+    if (restored > 0) this.log(`restored ${restored} PR${restored === 1 ? "" : "s"}.`);
   }
 
   /**
-   * Write every ready PR to the state file, whole. A handful of PRs and a
-   * change every few minutes at the busiest; nothing here is worth batching.
-   * A write that fails is logged and otherwise ignored — a server that
-   * cannot keep its memory should still serve what it holds.
-   *
-   * Only ready PRs are worth keeping. A queued or building one has nothing
-   * built yet, so restoring it would only mean redoing the same work — and
+   * Write one PR's record: ready with what it built, or failed with why. A
+   * queued or building one is not written — there is nothing built yet, and
    * a build is a promise on this process's event loop, which does not
-   * survive the process; it is dropped and comes back when it is added
-   * again, as the watcher does on its next poll. A failed one has nothing
-   * costly to lose, and forgetting it means the next add retries it, which
-   * is what a reader restarting the server after fixing whatever failed
-   * wants anyway.
+   * survive the process; it comes back when it is added again, as the
+   * watcher does on its next poll. A write that fails is logged and
+   * otherwise ignored — a server that cannot keep its memory should still
+   * serve what it holds.
    */
-  private persist(): void {
-    if (!this.stateFile) return;
-    const prs: SavedPr[] = [];
-    for (const entry of this.entries.values()) {
-      if (entry.state !== "ready" || !entry.built || entry.readyAt === undefined) continue;
-      prs.push({
+  private persist(entry: Entry): void {
+    if (!this.persistence) return;
+    let record: StoredPr;
+    if (entry.state === "ready" && entry.built && entry.readyAt !== undefined) {
+      const { html: _html, ...built } = entry.built;
+      record = {
+        version: 1,
+        state: "ready",
         owner: entry.owner,
         repo: entry.repo,
         number: entry.number,
@@ -621,17 +608,28 @@ export class PrRegistry {
         facts: entry.facts,
         addedAt: entry.addedAt,
         readyAt: entry.readyAt,
-        built: entry.built,
-      });
+        built,
+      };
+    } else if (entry.state === "failed") {
+      record = {
+        version: 1,
+        state: "failed",
+        owner: entry.owner,
+        repo: entry.repo,
+        number: entry.number,
+        options: entry.options,
+        facts: entry.facts,
+        addedAt: entry.addedAt,
+        error: entry.error ?? "failed",
+        ...(entry.failedAt !== undefined ? { failedAt: entry.failedAt } : {}),
+      };
+    } else {
+      return;
     }
-    const snapshot: SavedRegistry = { version: 1, prs };
     try {
-      mkdirSync(path.dirname(this.stateFile), { recursive: true });
-      writeFileSync(this.stateFile, JSON.stringify(snapshot));
+      this.persistence.store.save(record);
     } catch (error) {
-      this.log(
-        `could not write ${this.stateFile}: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      this.log(`${entry.key}: could not save — ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 

@@ -11,33 +11,18 @@
  */
 
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import os from "node:os";
+import { existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { renderSliceExplorerHtml } from "@deep-review/call-graph";
-import { fetchPrInfo, parsePrUrl } from "@deep-review/pr";
-import { loadSliceReport, slicePr, writeSliceReport } from "@deep-review/slicer";
-import { explorerInputFromReport } from "./build.js";
-import type { AddOptions, BuildPr, PrFacts, PrKey, PrRef, PrView } from "./registry.js";
+import { fetchPrInfo, releaseCheckouts, removeRepoWorkDir } from "@deep-review/pr";
+import { forkBuild } from "./buildFork.js";
+import { LEGACY_WORK_DIR, legacyWorkDirOf, lockFile, logFile, prsDir, repoWorkDir, stateDir, workRoot } from "./paths.js";
+import type { AddOptions, CheckoutRef, PrFacts, PrKey, PrRef, PrView } from "./registry.js";
 import { startNavServer, VERSION, type NavServer } from "./serve.js";
+import { fileStore } from "./store.js";
 
-export function stateDir(): string {
-  return process.env.DEEP_REVIEW_HOME ?? path.join(os.homedir(), ".deep-review");
-}
-
-function lockFile(): string {
-  return path.join(stateDir(), "server.json");
-}
-
-export function logFile(): string {
-  return path.join(stateDir(), "server.log");
-}
-
-/** The ready PRs the server held last time, so a restart shows them without rebuilding. */
-export function registryFile(): string {
-  return path.join(stateDir(), "registry.json");
-}
+export { logFile, prsDir, stateDir } from "./paths.js";
 
 interface ServerLock {
   pid: number;
@@ -108,99 +93,54 @@ export function serverBusyOrAlive(): { url: string; pid: number } | null {
 }
 
 /**
- * Where the daemon caches one PR's clone and worktrees when the add carries
- * no --work-dir of its own. The library default is under os.tmpdir(), which
- * macOS purges periodically — fine for a one-shot CLI run, a re-clone tax
- * on a server that lives for weeks. Per PR, not shared: a work dir holds
- * `repo/`, `base/` and `head/` for exactly one PR (see prepareCheckouts),
- * and two PRs sharing one would swap each other's worktrees out from under
- * their language services.
+ * A retired PR gives its checkouts back. Its worktrees go unless another
+ * held PR of the same repo is on the same commit; the clone goes when no
+ * held PR of the repo remains. A PR built under the old per-PR layout takes
+ * its whole directory with it.
  */
-function defaultDaemonWorkDir(ref: PrRef): string {
-  return path.join(
-    stateDir(),
-    "work",
-    `${safeName(ref.owner)}-${safeName(ref.repo)}-pr${ref.number}`,
-  );
-}
-
-/** One path-safe filename segment; GitHub names are tame, but the path must not care. */
-function safeName(part: string): string {
-  return part.replace(/[^A-Za-z0-9._-]/g, "_");
-}
-
-/**
- * The slice JSON a fresh run of this PR is kept at. Keyed by the PR's full
- * identity — owner included, or `vercel/swr#100` and a fork's `swr#100`
- * would share a file.
- */
-function cachedSliceFile(owner: string, repo: string, number: number): string {
-  return path.join(
-    stateDir(),
-    "slices",
-    `slices-${safeName(owner)}-${safeName(repo)}-pr${number}.json`,
-  );
-}
-
-/** The head commit a saved slice report was made from, or null if unreadable. */
-function reportHeadSha(file: string): string | null {
-  try {
-    return loadSliceReport(file).pr.headSha;
-  } catch {
-    return null;
+function retireCheckouts(removed: CheckoutRef, remaining: CheckoutRef[], log: (m: string) => void): void {
+  const legacy = legacyWorkDirOf(removed.headDir);
+  if (legacy) {
+    rmSync(legacy, { recursive: true, force: true });
+    log(`${removed.owner}/${removed.repo}#${removed.number}: removed ${legacy}.`);
+    return;
   }
-}
-
-/**
- * The build the daemon runs when a PR is added: slice it, walk each slice's
- * call graph, render the page under the prefix the server will mount it at.
- * The slice JSON of a fresh run is kept under the state dir, and a kept one
- * whose head commit still matches the PR's is reused instead of paying for
- * the model again — a restart, or re-adding an unchanged PR, costs no slicing.
- * An explicit slice JSON (--slices) is trusted as given, no head check.
- */
-const daemonBuild: BuildPr = async ({ prUrl, navBase, options }, log) => {
-  const ref = parsePrUrl(prUrl);
-  const workDir = defaultDaemonWorkDir(ref);
-  mkdirSync(workDir, { recursive: true });
-
-  let reportFile: string;
-  if (options.slicesFile) {
-    reportFile = options.slicesFile;
-    log(`using slices from ${reportFile}`);
-  } else {
-    const info = await fetchPrInfo(ref);
-    const cached = cachedSliceFile(info.owner, info.repo, info.number);
-    if (existsSync(cached) && reportHeadSha(cached) === info.headSha) {
-      reportFile = cached;
-      log(`head unchanged at ${info.headSha.slice(0, 8)}; reusing slices from ${cached}`);
-    } else {
-      const report = await slicePr({
-        prUrl,
-        workDir,
-        ...(options.model ? { model: options.model } : {}),
-        onProgress: log,
-      });
-      mkdirSync(path.dirname(cached), { recursive: true });
-      reportFile = writeSliceReport(report, cached);
-      log(`slices written to ${reportFile}`);
+  const root = repoWorkDir(removed);
+  const survivors = remaining.filter((pr) => pr.owner === removed.owner && pr.repo === removed.repo);
+  if (survivors.length === 0) {
+    removeRepoWorkDir(root);
+    try {
+      // The owner directory too, if this was its last repo.
+      rmdirSync(path.dirname(root));
+    } catch {
+      // Other repos of the owner remain, or it is already gone.
     }
+    log(`${removed.owner}/${removed.repo}: no PRs left; removed ${root}.`);
+    return;
   }
+  const shas = survivors.flatMap((pr) => [pr.baseSha, pr.headSha]).filter((sha): sha is string => Boolean(sha));
+  const { removed: gone } = releaseCheckouts(root, { shas });
+  if (gone.length > 0) log(`${removed.owner}/${removed.repo}#${removed.number}: released ${gone.length} worktree${gone.length === 1 ? "" : "s"}.`);
+}
 
-  const built = await explorerInputFromReport(reportFile, {
-    workDir,
-    ...(options.maxGraphs !== undefined ? { maxGraphs: options.maxGraphs } : {}),
-    ...(options.debugMarks ? { debugMarks: true } : {}),
-    onProgress: log,
-  });
-  const input = { ...built.input, navBase };
-  return {
-    input,
-    headDir: built.headDir,
-    html: renderSliceExplorerHtml(input),
-    headSha: built.report.pr.headSha,
-  };
-};
+/**
+ * Once, on start: drop every old-layout directory no held PR still reads
+ * from. They were orphaned when the layout changed, and nothing else will
+ * ever look at them.
+ */
+function sweepLegacyWorkDirs(held: CheckoutRef[], log: (m: string) => void): void {
+  const root = workRoot();
+  if (!existsSync(root)) return;
+  const inUse = new Set(held.map((pr) => legacyWorkDirOf(pr.headDir)).filter(Boolean));
+  let swept = 0;
+  for (const name of readdirSync(root)) {
+    const dir = path.join(root, name);
+    if (!LEGACY_WORK_DIR.test(name) || inUse.has(dir)) continue;
+    rmSync(dir, { recursive: true, force: true });
+    swept++;
+  }
+  if (swept > 0) log(`removed ${swept} old per-PR work director${swept === 1 ? "y" : "ies"} under ${root}.`);
+}
 
 /** The port the server tries first; `$DEEP_REVIEW_PORT` overrides it, `--port` overrides both. */
 export const DEFAULT_PORT = 7331;
@@ -229,12 +169,21 @@ export async function runDaemon(options: RunDaemonOptions = {}): Promise<NavServ
   }
   const startOn = (port: number): Promise<NavServer> =>
     startNavServer({
-      build: daemonBuild,
+      // Each build in its own child process: the server stays answerable
+      // while a clone or a language service runs for minutes.
+      build: forkBuild(),
       // A re-added PR is only trusted while its head has not moved.
       currentHeadSha: async (ref) => (await fetchPrInfo(ref)).headSha,
-      stateFile: registryFile(),
-      // Pages restored from the state file come back in this version's chrome.
-      rerender: ({ input }) => renderSliceExplorerHtml(input),
+      persistence: {
+        store: fileStore(prsDir(), {
+          // The previous single-file layout, converted once on first start.
+          legacyFile: path.join(stateDir(), "registry.json"),
+          ...(options.onProgress ? { onProblem: options.onProgress } : {}),
+        }),
+        // Stored builds come back in this version's chrome.
+        render: ({ input }) => renderSliceExplorerHtml(input),
+      },
+      onRemoved: (removed, remaining) => retireCheckouts(removed, remaining, options.onProgress ?? (() => {})),
       port,
       ...(options.concurrency !== undefined ? { concurrency: options.concurrency } : {}),
       ...(options.onProgress ? { onProgress: options.onProgress } : {}),
@@ -255,6 +204,7 @@ export async function runDaemon(options: RunDaemonOptions = {}): Promise<NavServ
       server = await startOn(0);
     }
   }
+  sweepLegacyWorkDirs(server.registry.checkouts(), options.onProgress ?? (() => {}));
   mkdirSync(stateDir(), { recursive: true });
   const lock: ServerLock = {
     pid: process.pid,

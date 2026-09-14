@@ -1,9 +1,13 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { SliceExplorerInput } from "@deep-review/call-graph";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parsePrPath, PrRegistry, prKey, prMountPath, type BuiltPr, type PrRef } from "./registry.js";
+import { fileStore, type StoredBuild } from "./store.js";
+
+/** The page a stored build gets on restore: enough to tell one PR's from another's. */
+const renderStored = ({ input }: StoredBuild): string => `<html>${input.number}</html>`;
 
 const headDir = mkdtempSync(path.join(os.tmpdir(), "registry-test-"));
 afterAll(() => rmSync(headDir, { recursive: true, force: true }));
@@ -208,10 +212,11 @@ describe("PrRegistry", () => {
 
 describe("PrRegistry persistence", () => {
   let home: string;
-  let stateFile: string;
+  let dir: string;
+  const persist = () => ({ store: fileStore(dir), render: renderStored });
   beforeEach(() => {
     home = mkdtempSync(path.join(os.tmpdir(), "registry-state-"));
-    stateFile = path.join(home, "state", "registry.json");
+    dir = path.join(home, "state", "prs");
   });
   afterEach(() => rmSync(home, { recursive: true, force: true }));
 
@@ -227,7 +232,7 @@ describe("PrRegistry persistence", () => {
 
   it("brings a ready PR back in a fresh registry without building it again", async () => {
     const first = countingBuild();
-    const registry = new PrRegistry({ build: first.build, stateFile });
+    const registry = new PrRegistry({ build: first.build, persistence: persist() });
     registry.add(ref(1), { maxGraphs: 3 });
     await registry.settled();
     const before = registry.get("a/b#1")!;
@@ -235,7 +240,7 @@ describe("PrRegistry persistence", () => {
     expect(first.calls()).toBe(1);
 
     const second = countingBuild();
-    const reloaded = new PrRegistry({ build: second.build, stateFile });
+    const reloaded = new PrRegistry({ build: second.build, persistence: persist() });
     const after = reloaded.get("a/b#1");
     expect(second.calls()).toBe(0);
     expect(after).toMatchObject({
@@ -254,43 +259,45 @@ describe("PrRegistry persistence", () => {
     reloaded.add(ref(1));
     await reloaded.settled();
     expect(second.calls()).toBe(0);
-    // What was written names the PR and what it was added with.
-    expect(JSON.parse(readFileSync(stateFile, "utf8"))).toMatchObject({
-      version: 1,
-      prs: [{ owner: "a", repo: "b", number: 1, options: { maxGraphs: 3 } }],
-    });
+    // What was written names the PR and what it was added with — and not the
+    // page, which is derived and was 19 MB of the old state file.
+    const files = readdirSync(dir);
+    expect(files).toEqual(["a__b__1.json"]);
+    const record = JSON.parse(readFileSync(path.join(dir, files[0]!), "utf8"));
+    expect(record).toMatchObject({ version: 1, state: "ready", owner: "a", repo: "b", number: 1, options: { maxGraphs: 3 } });
+    expect(record.built).not.toHaveProperty("html");
     reloaded.dispose();
   });
 
   it("forgets a removed PR on disk too, so a restart does not bring it back", async () => {
     const { build } = countingBuild();
-    const registry = new PrRegistry({ build, stateFile });
+    const registry = new PrRegistry({ build, persistence: persist() });
     registry.add(ref(1));
     registry.add(ref(2));
     await registry.settled();
-    expect(JSON.parse(readFileSync(stateFile, "utf8")).prs).toHaveLength(2);
+    expect(readdirSync(dir)).toHaveLength(2);
     // The watcher does this when a PR is merged or closed. If the file still
     // held it, the next restart would put a finished PR back on the index.
     expect(registry.remove("a/b#1")).toBe(true);
     registry.dispose();
 
-    const reloaded = new PrRegistry({ build, stateFile });
+    const reloaded = new PrRegistry({ build, persistence: persist() });
     expect(reloaded.list().map((p) => p.key)).toEqual(["a/b#2"]);
     reloaded.dispose();
   });
 
   it.each([
-    ["no file", null],
+    ["no directory", null],
     ["an empty file", ""],
     ["a file that is not JSON", "{ this is not"],
     ["JSON of the wrong shape", JSON.stringify({ prs: "many", version: 1 })],
   ])("starts empty given %s", (_name, contents) => {
     if (contents !== null) {
-      mkdirSync(path.dirname(stateFile), { recursive: true });
-      writeFileSync(stateFile, contents);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(path.join(dir, "a__b__1.json"), contents);
     }
     const { build, calls } = countingBuild();
-    const registry = new PrRegistry({ build, stateFile });
+    const registry = new PrRegistry({ build, persistence: persist() });
     expect(registry.list()).toEqual([]);
     expect(calls()).toBe(0);
     registry.dispose();
@@ -298,22 +305,22 @@ describe("PrRegistry persistence", () => {
 
   it("skips a record it cannot trust rather than crashing on it later", async () => {
     const { build } = countingBuild();
-    const registry = new PrRegistry({ build, stateFile });
+    const registry = new PrRegistry({ build, persistence: persist() });
     registry.add(ref(1));
     await registry.settled();
     registry.dispose();
-    const saved = JSON.parse(readFileSync(stateFile, "utf8")) as { prs: unknown[] };
-    saved.prs.push({ owner: "a", repo: "b", number: 2 }, null, "a/b#3");
-    writeFileSync(stateFile, JSON.stringify(saved));
+    writeFileSync(path.join(dir, "a__b__2.json"), JSON.stringify({ owner: "a", repo: "b", number: 2 }));
+    writeFileSync(path.join(dir, "a__b__3.json"), "null");
+    writeFileSync(path.join(dir, "notes.txt"), "not a record at all");
 
-    const reloaded = new PrRegistry({ build, stateFile });
+    const reloaded = new PrRegistry({ build, persistence: persist() });
     expect(reloaded.list().map((p) => p.key)).toEqual(["a/b#1"]);
     reloaded.dispose();
   });
 
-  it("does not remember what was still queued, building or failed", async () => {
+  it("remembers ready and failed PRs, not what was still queued or building", async () => {
     const { build, pending } = manualBuild();
-    const registry = new PrRegistry({ build, concurrency: 1, stateFile });
+    const registry = new PrRegistry({ build, concurrency: 1, persistence: persist() });
     registry.add(ref(1));
     registry.add(ref(2));
     registry.add(ref(3));
@@ -330,11 +337,14 @@ describe("PrRegistry persistence", () => {
     registry.dispose();
 
     const next = countingBuild();
-    const reloaded = new PrRegistry({ build: next.build, stateFile });
-    // Only the ready one is back; nothing came back as ready without having been built.
-    expect(reloaded.list().map((p) => [p.key, p.state])).toEqual([["a/b#2", "ready"]]);
+    const reloaded = new PrRegistry({ build: next.build, persistence: persist() });
+    // The ready one is back as ready; the failed one is back as failed, with
+    // its reason, rather than vanishing while the watcher believes it was
+    // handed over. Nothing came back as ready without having been built.
+    expect(reloaded.list().map((p) => [p.key, p.state])).toEqual([["a/b#1", "failed"], ["a/b#2", "ready"]]);
+    expect(reloaded.get("a/b#1")).toMatchObject({ error: "no key" });
     expect(next.calls()).toBe(0);
-    // The others are simply gone, so adding them again builds them.
+    // Adding a failed PR again retries it; the building/queued ones are gone, so adding builds them.
     reloaded.add(ref(1));
     reloaded.add(ref(3));
     await reloaded.settled();
@@ -347,14 +357,14 @@ describe("PrRegistry persistence", () => {
     mkdirSync(gone);
     const build = ({ prUrl, navBase }: { prUrl: string; navBase: string }) =>
       Promise.resolve({ ...built(Number(prUrl.split("/").pop()), navBase), headDir: gone });
-    const registry = new PrRegistry({ build, stateFile });
+    const registry = new PrRegistry({ build, persistence: persist() });
     registry.add(ref(1));
     registry.add(ref(2));
     await registry.settled();
     registry.dispose();
     rmSync(gone, { recursive: true });
 
-    const reloaded = new PrRegistry({ build, stateFile });
+    const reloaded = new PrRegistry({ build, persistence: persist() });
     expect(reloaded.get("a/b#1")).toMatchObject({ state: "ready", title: "PR 1" });
     expect(reloaded.html("a/b#1")).toBe("<html>1</html>");
     expect(() => reloaded.sessionFor("a/b#1")).toThrow(/head checkout for a\/b#1 is gone/);
@@ -376,39 +386,77 @@ describe("PrRegistry re-rendering", () => {
   const quickBuild = ({ prUrl, navBase }: { prUrl: string; navBase: string }) =>
     Promise.resolve(built(Number(prUrl.split("/").pop()), navBase));
 
-  it("renders a restored PR's page afresh from its input, falling back to the saved page", async () => {
-    const stateFile = path.join(home, "registry.json");
-    const registry = new PrRegistry({ build: quickBuild, stateFile });
+  it("renders a restored PR's page from its stored input, and skips one it cannot render", async () => {
+    const store = fileStore(path.join(home, "prs"));
+    const registry = new PrRegistry({ build: quickBuild, persistence: { store, render: renderStored } });
     registry.add(ref(1));
     await registry.settled();
     registry.dispose();
 
+    // A new renderer: the stored input, this version's page.
     const fresh = new PrRegistry({
       build: quickBuild,
-      stateFile,
-      rerender: ({ input }) => `<html>new chrome for ${input.prTitle}</html>`,
+      persistence: { store, render: ({ input }) => `<html>new chrome for ${input.prTitle}</html>` },
     });
     expect(fresh.html("a/b#1")).toBe("<html>new chrome for PR 1</html>");
     fresh.dispose();
 
+    // No page can be made: the PR is not ready, so it is not restored as ready.
+    const log: string[] = [];
     const broken = new PrRegistry({
       build: quickBuild,
-      stateFile,
-      rerender: () => {
-        throw new Error("renderer down");
+      onProgress: (m) => log.push(m),
+      persistence: {
+        store,
+        render: () => {
+          throw new Error("renderer down");
+        },
       },
     });
-    expect(broken.html("a/b#1")).toBe("<html>1</html>");
+    expect(broken.list()).toEqual([]);
+    expect(log.some((m) => /could not render.*renderer down/.test(m))).toBe(true);
     broken.dispose();
+  });
+});
+
+describe("PrRegistry checkouts", () => {
+  const quickBuild = ({ prUrl, navBase }: { prUrl: string; navBase: string }) =>
+    Promise.resolve({ ...built(Number(prUrl.split("/").pop()), navBase), headSha: `h${prUrl.slice(-1)}`, baseSha: "base" });
+
+  it("tells the cleanup hook what a dropped PR held and what every other PR still holds", async () => {
+    const calls: [unknown, unknown][] = [];
+    const registry = new PrRegistry({ build: quickBuild, onRemoved: (removed, remaining) => calls.push([removed, remaining]) });
+    registry.add(ref(1));
+    registry.add(ref(2));
+    await registry.settled();
+    expect(registry.checkouts()).toEqual([
+      { owner: "a", repo: "b", number: 1, headDir, headSha: "h1", baseSha: "base" },
+      { owner: "a", repo: "b", number: 2, headDir, headSha: "h2", baseSha: "base" },
+    ]);
+    registry.remove("a/b#1");
+    expect(calls).toEqual([
+      [
+        { owner: "a", repo: "b", number: 1, headDir, headSha: "h1", baseSha: "base" },
+        [{ owner: "a", repo: "b", number: 2, headDir, headSha: "h2", baseSha: "base" }],
+      ],
+    ]);
+    // A hook that throws does not stop the removal.
+    const angry = new PrRegistry({ build: quickBuild, onRemoved: () => { throw new Error("disk on fire"); } });
+    angry.add(ref(3));
+    await angry.settled();
+    expect(angry.remove("a/b#3")).toBe(true);
+    expect(angry.list()).toEqual([]);
+    registry.dispose();
+    angry.dispose();
   });
 });
 
 describe("PrRegistry facts", () => {
   let home: string;
-  let stateFile: string;
+  let persistence: { store: ReturnType<typeof fileStore>; render: typeof renderStored };
   beforeEach(() => {
     home = mkdtempSync(path.join(os.tmpdir(), "registry-facts-"));
-    stateFile = path.join(home, "registry.json");
+    persistence = { store: fileStore(path.join(home, "prs")), render: renderStored };
   });
   afterEach(() => rmSync(home, { recursive: true, force: true }));
 
@@ -455,12 +503,12 @@ describe("PrRegistry facts", () => {
   });
 
   it("keeps the facts across a restart, so a PR stays on its tab", async () => {
-    const registry = new PrRegistry({ build: quickBuild, stateFile });
+    const registry = new PrRegistry({ build: quickBuild, persistence });
     registry.add(ref(1), {}, { role: "authored", author: "me" });
     await registry.settled();
     registry.setFacts("a/b#1", { approved: true, approvers: ["alex"] });
     registry.dispose();
-    const reloaded = new PrRegistry({ build: quickBuild, stateFile });
+    const reloaded = new PrRegistry({ build: quickBuild, persistence });
     expect(reloaded.get("a/b#1")).toMatchObject({
       state: "ready",
       role: "authored",
