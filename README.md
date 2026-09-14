@@ -104,6 +104,8 @@ Run from the repo root:
 | `pnpm build`     | Build every package                    |
 | `pnpm typecheck` | Type-check every package               |
 | `pnpm test`      | Run all tests (Vitest)                 |
+| `pnpm e2e`       | Compare the pages against their visual baselines (Playwright, Chromium) |
+| `pnpm e2e:update` | Re-take the baselines after a deliberate visual change |
 
 
 

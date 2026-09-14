@@ -481,3 +481,14 @@ describe("size breakdown", () => {
     );
   });
 });
+
+describe("explorer page scripts", () => {
+  it("inline scripts parse as JavaScript", () => {
+    const html = render();
+    const scripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)]
+      .filter((m) => !/type="application\/json"/.test(m[0]))
+      .map((m) => m[1]!);
+    expect(scripts.length).toBeGreaterThan(0);
+    for (const script of scripts) expect(() => new Function(script)).not.toThrow();
+  });
+});

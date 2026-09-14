@@ -234,12 +234,15 @@ document.addEventListener("click", function (e) {
   /* Retry: adding a failed PR again is how the server retries it. */
   var retry = e.target.closest(".retry");
   if (retry) {
-    var m = /^([^/]+)\/([^#]+)#(\d+)$/.exec(retry.closest(".row").dataset.key);
-    if (!m) return;
+    /* owner/repo#number, taken apart without a regex: a slash inside a
+       regex inside this template literal is what broke this page once. */
+    var key = retry.closest(".row").dataset.key;
+    var slash = key.indexOf("/"), hash = key.lastIndexOf("#");
+    if (slash < 0 || hash < slash) return;
     fetch("/prs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ owner: m[1], repo: m[2], number: Number(m[3]) }),
+      body: JSON.stringify({ owner: key.slice(0, slash), repo: key.slice(slash + 1, hash), number: Number(key.slice(hash + 1)) }),
     }).then(poll, poll);
     return;
   }

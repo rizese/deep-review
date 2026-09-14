@@ -53,6 +53,10 @@ export const CHROME_CSS = `
      cross-document view transition: each pill is named, and the browser
      morphs the old one into the new rather than painting a fresh bar. */
   @view-transition { navigation: auto; }
+  /* While the transition plays, the browser covers the page with its
+     snapshots — and by default they take the pointer, so the first click
+     after every navigation landed on a picture of the page. Let it through. */
+  ::view-transition { pointer-events: none; }
   ::view-transition-old(root), ::view-transition-new(root) { animation-duration: 0.22s; }
   ::view-transition-group(chrome-brand), ::view-transition-group(chrome-tools), ::view-transition-group(chrome-theme) {
     animation-duration: 0.32s; animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);

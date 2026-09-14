@@ -32,6 +32,8 @@ describe("renderChrome", () => {
 
   it("lets the browser morph the bar between pages instead of repainting it", () => {
     expect(CHROME_CSS).toContain("@view-transition { navigation: auto; }");
+    // Or the snapshot layer swallows the first click after every navigation.
+    expect(CHROME_CSS).toContain("::view-transition { pointer-events: none; }");
     for (const name of ["chrome-brand", "chrome-tools", "chrome-theme"]) {
       expect(CHROME_CSS).toContain(`view-transition-name: ${name};`);
     }

@@ -65,6 +65,8 @@ export interface NavServerOptions {
   persistence?: RegistryOptions["persistence"];
   /** Release a dropped PR's checkouts; see `RegistryOptions.onRemoved`. */
   onRemoved?: RegistryOptions["onRemoved"];
+  /** When failed builds are retried; see `RegistryOptions.retry`. */
+  retry?: RegistryOptions["retry"];
 }
 
 export interface NavServer {
@@ -158,6 +160,7 @@ export async function startNavServer(options: NavServerOptions): Promise<NavServ
     ...(options.sessionIdleMs !== undefined ? { sessionIdleMs: options.sessionIdleMs } : {}),
     ...(options.persistence !== undefined ? { persistence: options.persistence } : {}),
     ...(options.onRemoved !== undefined ? { onRemoved: options.onRemoved } : {}),
+    ...(options.retry !== undefined ? { retry: options.retry } : {}),
     onProgress: log,
   });
 

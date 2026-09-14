@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { renderIndexPage } from "./indexPage.js";
+import { renderBuildingPage, renderIndexPage } from "./indexPage.js";
 import type { PrView } from "./registry.js";
 
 function view(overrides: Partial<PrView> = {}): PrView {
@@ -67,6 +67,22 @@ describe("renderIndexPage", () => {
     const empty = renderIndexPage(
       [view({ size: { byKind: null, total: { additions: 0, deletions: 0 } } })]);
     expect(empty).not.toContain('class="delta"');
+  });
+});
+
+/** Every inline script of a rendered page, so a test can ask the engine to parse it. */
+function inlineScripts(html: string): string[] {
+  return [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]!);
+}
+
+describe("page scripts", () => {
+  it("parse — a regex with a slash inside a template literal once broke every button on the index", () => {
+    const pages = [renderIndexPage([view(), view({ key: "a/b#2", number: 2, state: "failed", error: "x" })]), renderBuildingPage(view({ state: "building" }))];
+    for (const html of pages) {
+      const scripts = inlineScripts(html);
+      expect(scripts.length).toBeGreaterThan(0);
+      for (const script of scripts) expect(() => new Function(script)).not.toThrow();
+    }
   });
 });
 
