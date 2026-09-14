@@ -718,8 +718,8 @@ export class PrRegistry {
         this.scheduleRetry(entry, delay);
       }
     }
+    // Both branches said their last word through note(), which emitted.
     this.persist(entry);
-    this.emit(entry);
   }
 
   /**
