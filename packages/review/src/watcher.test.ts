@@ -30,6 +30,7 @@ function assigned(number: number, updatedAt = "2026-09-01T10:00:00Z"): AssignedP
     author: "someone",
     approved: false,
     approvers: [],
+    headSha: "h",
   };
 }
 
@@ -135,8 +136,8 @@ describe("pollOnce", () => {
       },
     });
     expect(facts).toEqual([
-      { role: "authored", approved: false, approvers: [], author: "me", draft: true },
-      { role: "review", approved: true, approvers: ["alex"], author: "someone", draft: false },
+      { role: "authored", approved: false, approvers: [], author: "me", draft: true, headSha: "h" },
+      { role: "review", approved: true, approvers: ["alex"], author: "someone", draft: false, headSha: "h" },
     ]);
   });
 
@@ -161,7 +162,7 @@ describe("pollOnce", () => {
     await pollOnce({ ...deps, list: async () => [{ ...assigned(1), approved: true, approvers: ["alex"] }] });
     expect(handed).toEqual([1]);
     expect(refreshed).toEqual([
-      ["acme/widgets#1", { role: "review", approved: true, approvers: ["alex"], author: "someone", draft: false }],
+      ["acme/widgets#1", { role: "review", approved: true, approvers: ["alex"], author: "someone", draft: false, headSha: "h" }],
     ]);
   });
 

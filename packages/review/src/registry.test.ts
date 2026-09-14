@@ -2,9 +2,10 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import os from "node:os";
 import path from "node:path";
 import type { SliceExplorerInput } from "@deep-review/call-graph";
+import { BuildError, ConfigError, InputError, TransientError } from "@deep-review/pr";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parsePrPath, PrRegistry, prKey, prMountPath, type BuiltPr, type PrRef } from "./registry.js";
-import { fileStore, type StoredBuild } from "./store.js";
+import { fileStore, memoryStore, type StoredBuild } from "./store.js";
 
 /** The page a stored build gets on restore: enough to tell one PR's from another's. */
 const renderStored = ({ input }: StoredBuild): string => `<html>${input.number}</html>`;
@@ -416,6 +417,110 @@ describe("PrRegistry re-rendering", () => {
     expect(broken.list()).toEqual([]);
     expect(log.some((m) => /could not render.*renderer down/.test(m))).toBe(true);
     broken.dispose();
+  });
+});
+
+describe("PrRegistry retries", () => {
+  const settle = () => new Promise((r) => setTimeout(r, 60));
+  /** A build that fails with the given errors in order, then succeeds. */
+  function failingBuild(errors: unknown[]) {
+    let calls = 0;
+    const build = ({ prUrl, navBase }: { prUrl: string; navBase: string }) => {
+      const error = errors[calls++];
+      if (error !== undefined) return Promise.reject(error);
+      return Promise.resolve(built(Number(prUrl.split("/").pop()), navBase));
+    };
+    return { build, calls: () => calls };
+  }
+  const fast = { transientDelaysMs: [10, 10], transientMaxMs: 60_000, buildRetries: 1, buildDelayMs: 10 };
+
+  it("retries a transient failure on the schedule, then reports the PR ready", async () => {
+    const { build, calls } = failingBuild([new TransientError("socket reset"), new TransientError("again")]);
+    const registry = new PrRegistry({ build, retry: fast });
+    registry.add(ref(1));
+    await tick();
+    expect(registry.get("a/b#1")).toMatchObject({
+      state: "failed",
+      error: "socket reset",
+      failure: { kind: "transient", attempts: 1, parked: false, nextRetryAt: expect.any(Number) },
+    });
+    await settle();
+    expect(registry.get("a/b#1")).toMatchObject({ state: "ready" });
+    expect(registry.get("a/b#1")!.failure).toBeUndefined();
+    expect(calls()).toBe(3);
+    registry.dispose();
+  });
+
+  it("gives a build failure one more go, then parks it", async () => {
+    const { build, calls } = failingBuild([new BuildError("bad slices"), new BuildError("bad again"), new BuildError("never")]);
+    const registry = new PrRegistry({ build, retry: fast });
+    registry.add(ref(1));
+    await tick();
+    expect(registry.get("a/b#1")!.failure).toMatchObject({ kind: "build", attempts: 1, parked: false });
+    await settle();
+    expect(registry.get("a/b#1")).toMatchObject({ state: "failed", error: "bad again", failure: { attempts: 2, parked: true } });
+    expect(registry.get("a/b#1")!.failure!.nextRetryAt).toBeUndefined();
+    await settle();
+    expect(calls()).toBe(2);
+    registry.dispose();
+  });
+
+  it("parks config and input failures at once, saying why", async () => {
+    const { build, calls } = failingBuild([new ConfigError("no token")]);
+    const registry = new PrRegistry({ build, retry: fast });
+    registry.add(ref(1));
+    await tick();
+    const view = registry.get("a/b#1")!;
+    expect(view.failure).toMatchObject({ kind: "config", parked: true });
+    expect(view.log.at(-1)).toMatch(/fix the setup/);
+    await settle();
+    expect(calls()).toBe(1);
+    // An unrecognised error is a build failure by default, and is retried once.
+    const other = failingBuild([new Error("something odd")]);
+    const r2 = new PrRegistry({ build: other.build, retry: fast });
+    r2.add(ref(2));
+    await tick();
+    expect(r2.get("a/b#2")!.failure).toMatchObject({ kind: "build", parked: false });
+    registry.dispose();
+    r2.dispose();
+  });
+
+  it("un-parks a failed PR when GitHub reports a new head, and keeps it parked otherwise", async () => {
+    const { build, calls } = failingBuild([new InputError("diff too large")]);
+    const registry = new PrRegistry({ build, retry: fast });
+    registry.add(ref(1), {}, { headSha: "aaa" });
+    await tick();
+    expect(registry.get("a/b#1")!.failure).toMatchObject({ kind: "input", parked: true, headSha: "aaa" });
+    registry.setFacts("a/b#1", { approved: true, headSha: "aaa" });
+    await settle();
+    expect(calls()).toBe(1);
+    registry.setFacts("a/b#1", { headSha: "bbb" });
+    await settle();
+    expect(registry.get("a/b#1")).toMatchObject({ state: "ready" });
+    expect(registry.get("a/b#1")!.failure).toBeUndefined();
+    expect(calls()).toBe(2);
+    registry.dispose();
+  });
+
+  it("retries transient and config failures after a restart, and leaves parked ones parked", async () => {
+    const store = memoryStore();
+    const persistence = { store, render: renderStored };
+    const first = failingBuild([new TransientError("net"), new ConfigError("key"), new InputError("big")]);
+    const registry = new PrRegistry({ build: first.build, persistence, retry: { ...fast, transientDelaysMs: [60_000] } });
+    registry.add(ref(1));
+    registry.add(ref(2));
+    registry.add(ref(3));
+    await tick();
+    expect(registry.list().map((p) => p.failure?.kind)).toEqual(["transient", "config", "input"]);
+    registry.dispose();
+
+    const second = failingBuild([]);
+    const reloaded = new PrRegistry({ build: second.build, persistence, retry: fast });
+    await reloaded.settled();
+    expect(reloaded.list().map((p) => [p.key, p.state])).toEqual([["a/b#1", "ready"], ["a/b#2", "ready"], ["a/b#3", "failed"]]);
+    expect(reloaded.get("a/b#3")!.failure).toMatchObject({ kind: "input", parked: true });
+    expect(second.calls()).toBe(2);
+    reloaded.dispose();
   });
 });
 

@@ -26,7 +26,7 @@ import {
   type SizeBreakdown,
   type SliceExplorerInput,
 } from "@deep-review/call-graph";
-import { prUrl, type PrRef, type PrRole } from "@deep-review/pr";
+import { failureKindOf, prUrl, type FailureKind, type PrRef, type PrRole } from "@deep-review/pr";
 import type { PrStore, StoredBuild, StoredPr } from "./store.js";
 
 export type { PrRef, PrRole } from "@deep-review/pr";
@@ -103,7 +103,50 @@ export interface PrFacts {
   approvers?: string[] | undefined;
   author?: string | undefined;
   draft?: boolean | undefined;
+  /** The PR's head commit as GitHub reports it now; a change un-parks a failed build. */
+  headSha?: string | undefined;
 }
+
+/**
+ * How a failed PR stands with respect to being tried again. The kind decides
+ * the policy (see RetryPolicy); attempts count failures since the last
+ * success or reset; `nextRetryAt` is set while a retry is scheduled and
+ * `parked` when nothing will happen until the PR's head moves or someone
+ * asks — which is also what a restart does for transient and config
+ * failures, since a restart is when the environment changes.
+ */
+export interface PrFailure {
+  kind: FailureKind;
+  attempts: number;
+  /** When the first of the current run of failures happened. */
+  firstFailedAt: number;
+  nextRetryAt?: number | undefined;
+  parked: boolean;
+  /** The head commit the PR was at when it failed, when known. */
+  headSha?: string | undefined;
+}
+
+/**
+ * When to try a failed build again. Transient failures back off along the
+ * schedule and give up after `transientMaxMs` from the first failure. Build
+ * failures — our own pipeline, or model output that would not validate —
+ * get `buildRetries` more goes, since the model is not deterministic, then
+ * park until the head moves. Config and input failures park at once:
+ * nothing about a retry would differ.
+ */
+export interface RetryPolicy {
+  transientDelaysMs: number[];
+  transientMaxMs: number;
+  buildRetries: number;
+  buildDelayMs: number;
+}
+
+export const DEFAULT_RETRY: RetryPolicy = {
+  transientDelaysMs: [60_000, 120_000, 300_000, 900_000, 1_800_000, 3_600_000],
+  transientMaxMs: 24 * 3_600_000,
+  buildRetries: 1,
+  buildDelayMs: 60_000,
+};
 
 /** What a PR looks like from outside: the index page and `/prs` both read this. */
 export interface PrView extends PrRef {
@@ -126,6 +169,8 @@ export interface PrView extends PrRef {
   size?: SizeBreakdown | undefined;
   /** Why the build failed, when it did. */
   error?: string | undefined;
+  /** How the failure stands: its kind, and whether and when it will be retried. */
+  failure?: PrFailure | undefined;
   addedAt: number;
   readyAt?: number | undefined;
   /** The head commit the build was made from, for staleness checks. */
@@ -201,6 +246,8 @@ export interface RegistryOptions {
    * worktree another PR shares. The registry itself touches no checkout.
    */
   onRemoved?: ((removed: CheckoutRef, remaining: CheckoutRef[]) => void) | undefined;
+  /** When failed builds are tried again; see `RetryPolicy`. */
+  retry?: Partial<RetryPolicy> | undefined;
 }
 
 interface Entry extends PrRef {
@@ -213,6 +260,9 @@ interface Entry extends PrRef {
   readyAt?: number;
   error?: string;
   failedAt?: number;
+  failure?: PrFailure;
+  /** Pending retry of a failed build. */
+  retryTimer?: NodeJS.Timeout;
   log: string[];
   built?: BuiltPr;
   session?: NavSession;
@@ -220,6 +270,29 @@ interface Entry extends PrRef {
   lastUsed: number;
   /** Pending "the page is gone, let the session go" timer. */
   release?: NodeJS.Timeout;
+}
+
+/** "4m", "90s", "2h": how long until a retry, for a log line or an index row. */
+export function humanDelay(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 90) return `${s}s`;
+  const m = Math.round(s / 60);
+  if (m < 90) return `${m}m`;
+  return `${Math.round(m / 60)}h`;
+}
+
+/** Why a failed PR is left alone, by the kind of failure. */
+export function parkedNote(kind: FailureKind): string {
+  switch (kind) {
+    case "config":
+      return "not retried: fix the setup, then retry";
+    case "input":
+      return "not retried: nothing will change until the PR does";
+    case "transient":
+      return "gave up retrying; retry by hand, or it retries when the PR changes";
+    default:
+      return "parked until the PR changes; retry by hand to try again now";
+  }
 }
 
 function checkoutOf(entry: Entry): CheckoutRef {
@@ -259,6 +332,7 @@ export class PrRegistry {
   private readonly log: (message: string) => void;
   private readonly persistence: { store: PrStore; render: (built: StoredBuild) => string } | null;
   private readonly onRemoved: ((removed: CheckoutRef, remaining: CheckoutRef[]) => void) | null;
+  private readonly retry: RetryPolicy;
   /** Keys waiting for a build slot, in the order they were added. */
   private readonly queue: PrKey[] = [];
   private building = 0;
@@ -274,6 +348,7 @@ export class PrRegistry {
     this.log = options.onProgress ?? (() => {});
     this.persistence = options.persistence ?? null;
     this.onRemoved = options.onRemoved ?? null;
+    this.retry = { ...DEFAULT_RETRY, ...options.retry };
     if (this.persistence) this.restore();
     // An idle session is worth reclaiming but not worth watching closely;
     // a sweep at a fraction of the idle window is close enough.
@@ -347,6 +422,55 @@ export class PrRegistry {
     // Facts are stored with the build, so a restart keeps a PR on the right
     // tab rather than defaulting it back to "review".
     this.persist(entry);
+    // A failed PR whose head has moved is a different PR: whatever went wrong
+    // may be fixed, so it is tried again now, with a clean slate.
+    if (entry.state === "failed" && facts.headSha && entry.failure && entry.failure.headSha !== facts.headSha) {
+      delete entry.failure;
+      this.requeue(entry, `head moved to ${facts.headSha.slice(0, 8)}; retrying`);
+    }
+  }
+
+  /** Try a failed PR again, now: back in the queue, its failure kept for the backoff to count. */
+  private requeue(entry: Entry, why: string): void {
+    if (entry.retryTimer) {
+      clearTimeout(entry.retryTimer);
+      delete entry.retryTimer;
+    }
+    entry.state = "queued";
+    delete entry.error;
+    if (entry.failure) entry.failure = { ...entry.failure, nextRetryAt: undefined, parked: false };
+    entry.log.push(why);
+    this.log(`${entry.key}: ${why}.`);
+    this.queue.push(entry.key);
+    this.pump();
+  }
+
+  /**
+   * How long until the next try, or null to park. Attempts includes the one
+   * that just failed.
+   */
+  private retryDelay(failure: PrFailure): number | null {
+    switch (failure.kind) {
+      case "transient": {
+        if (Date.now() - failure.firstFailedAt > this.retry.transientMaxMs) return null;
+        const delays = this.retry.transientDelaysMs;
+        return delays[Math.min(failure.attempts, delays.length) - 1] ?? null;
+      }
+      case "build":
+        return failure.attempts <= this.retry.buildRetries ? this.retry.buildDelayMs : null;
+      default:
+        return null;
+    }
+  }
+
+  private scheduleRetry(entry: Entry, delayMs: number): void {
+    if (entry.retryTimer) clearTimeout(entry.retryTimer);
+    entry.retryTimer = setTimeout(() => {
+      delete entry.retryTimer;
+      if (this.disposed || this.entries.get(entry.key) !== entry || entry.state !== "failed") return;
+      this.requeue(entry, `retrying (attempt ${(entry.failure?.attempts ?? 0) + 1})`);
+    }, delayMs);
+    entry.retryTimer.unref();
   }
 
   list(): PrView[] {
@@ -430,6 +554,7 @@ export class PrRegistry {
     const entry = this.entries.get(key);
     if (!entry) return false;
     if (entry.release) clearTimeout(entry.release);
+    if (entry.retryTimer) clearTimeout(entry.retryTimer);
     this.releaseSession(entry, "removed");
     const queued = this.queue.indexOf(key);
     if (queued !== -1) this.queue.splice(queued, 1);
@@ -454,6 +579,7 @@ export class PrRegistry {
     this.sweep = null;
     for (const entry of this.entries.values()) {
       if (entry.release) clearTimeout(entry.release);
+      if (entry.retryTimer) clearTimeout(entry.retryTimer);
       this.releaseSession(entry, "shutting down");
     }
   }
@@ -518,6 +644,7 @@ export class PrRegistry {
       entry.state = "ready";
       entry.readyAt = Date.now();
       delete entry.error;
+      delete entry.failure;
       note(
         `ready — ${built.input.slices.length} slices, ${built.input.slices.filter((s) => s.graph).length} with a walkable call graph.`,
       );
@@ -526,7 +653,25 @@ export class PrRegistry {
       entry.state = "failed";
       entry.error = error instanceof Error ? error.message : String(error);
       entry.failedAt = Date.now();
-      note(`failed — ${entry.error}`);
+      const kind = failureKindOf(error);
+      const prior = entry.failure;
+      const failure: PrFailure = {
+        kind,
+        attempts: (prior?.attempts ?? 0) + 1,
+        firstFailedAt: prior?.firstFailedAt ?? entry.failedAt,
+        parked: false,
+        headSha: entry.facts.headSha,
+      };
+      const delay = this.retryDelay(failure);
+      if (delay === null) failure.parked = true;
+      else failure.nextRetryAt = Date.now() + delay;
+      entry.failure = failure;
+      note(`failed (${kind}) — ${entry.error}`);
+      if (delay === null) note(parkedNote(kind));
+      else {
+        note(`retrying in ${humanDelay(delay)} (attempt ${failure.attempts} of this run)`);
+        this.scheduleRetry(entry, delay);
+      }
     }
     this.persist(entry);
   }
@@ -571,13 +716,22 @@ export class PrRegistry {
           built: { ...stored.built, html },
         });
       } else {
-        this.entries.set(key, {
+        const entry: Entry = {
           ...base,
           state: "failed",
           error: stored.error ?? "failed in a previous run",
           ...(stored.failedAt !== undefined ? { failedAt: stored.failedAt } : {}),
           log: [`restored — failed in a previous run: ${stored.error ?? "unknown reason"}`],
-        });
+        };
+        this.entries.set(key, entry);
+        const kind = stored.failure?.kind;
+        if (kind === "transient" || kind === "config") {
+          // A restart is when the network is back or the token is fixed:
+          // the retry these two were waiting for.
+          this.requeue(entry, "retrying after restart");
+        } else if (stored.failure) {
+          entry.failure = { ...stored.failure, parked: true, nextRetryAt: undefined };
+        }
       }
       restored++;
     }
@@ -622,6 +776,16 @@ export class PrRegistry {
         addedAt: entry.addedAt,
         error: entry.error ?? "failed",
         ...(entry.failedAt !== undefined ? { failedAt: entry.failedAt } : {}),
+        ...(entry.failure
+          ? {
+              failure: {
+                kind: entry.failure.kind,
+                attempts: entry.failure.attempts,
+                firstFailedAt: entry.failure.firstFailedAt,
+                ...(entry.failure.headSha ? { headSha: entry.failure.headSha } : {}),
+              },
+            }
+          : {}),
       };
     } else {
       return;
@@ -653,6 +817,7 @@ export class PrRegistry {
       ...(input ? { graphs: input.slices.filter((s) => s.graph).length } : {}),
       ...(input ? { size: explorerSize(input) } : {}),
       ...(entry.error ? { error: entry.error } : {}),
+      ...(entry.failure ? { failure: { ...entry.failure } } : {}),
       addedAt: entry.addedAt,
       ...(entry.readyAt !== undefined ? { readyAt: entry.readyAt } : {}),
       ...(entry.built?.headSha ? { headSha: entry.built.headSha } : {}),

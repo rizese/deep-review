@@ -184,6 +184,8 @@ export interface AssignedPr extends PrRef {
   approved: boolean;
   /** Reviewers whose latest opinionated review is an approval. */
   approvers: string[];
+  /** The head commit right now; a change is what un-parks a failed build. */
+  headSha: string;
 }
 
 /**
@@ -268,6 +270,7 @@ interface SearchNode {
   updatedAt?: string;
   isDraft?: boolean;
   reviewDecision?: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null;
+  headRefOid?: string;
   author?: { login: string } | null;
   repository?: { nameWithOwner: string };
   latestOpinionatedReviews?: { nodes: { state: string; author: { login: string } | null }[] };
@@ -291,7 +294,7 @@ query($review: String!, $authored: String!) {
   authored: search(query: $authored, type: ISSUE, first: 100) { nodes { ...Pr } }
 }
 fragment Pr on PullRequest {
-  number title url updatedAt isDraft reviewDecision
+  number title url updatedAt isDraft reviewDecision headRefOid
   author { login }
   repository { nameWithOwner }
   latestOpinionatedReviews(first: 20) { nodes { state author { login } } }
@@ -322,6 +325,7 @@ function fromNode(node: SearchNode, role: PrRole): AssignedPr | null {
     author: node.author?.login ?? "",
     approved,
     approvers,
+    headSha: node.headRefOid ?? "",
   };
 }
 

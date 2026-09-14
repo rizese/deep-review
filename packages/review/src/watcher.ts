@@ -128,6 +128,7 @@ export function factsOf(pr: AssignedPr): PrFacts {
     approvers: pr.approvers,
     author: pr.author,
     draft: pr.draft,
+    ...(pr.headSha ? { headSha: pr.headSha } : {}),
   };
 }
 

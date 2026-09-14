@@ -16,7 +16,7 @@ import {
   REPORT_CSS,
   SIZE_CSS,
 } from "@deep-review/call-graph";
-import type { PrView } from "./registry.js";
+import { humanDelay, parkedNote, type PrView } from "./registry.js";
 
 const INDEX_CSS = `
   /* The bar runs the width of the window on every page; only the content
@@ -48,6 +48,11 @@ const INDEX_CSS = `
   .row .delta { margin-top: 0.45rem; max-width: 30rem; }
   .row .delta-text { font-size: 0.75rem; }
   .row .why { color: var(--del-edge); font-size: 0.85rem; margin-top: 0.15rem; }
+  .row .next { color: var(--ink-soft); font-size: 0.8rem; margin-top: 0.15rem; }
+  .retry { padding: 0.2rem 0.55rem; cursor: pointer; border: 1px solid var(--accent);
+           border-radius: 6px; background: var(--accent-soft); color: var(--accent); font: inherit;
+           font-size: 0.78rem; }
+  .retry:hover { background: var(--accent); color: var(--accent-ink); }
   .row .last { font-family: var(--mono); font-size: 0.78rem; color: var(--ink-faint);
                margin-top: 0.3rem; white-space: pre-wrap; }
   .side-actions { display: flex; align-items: center; gap: 0.5rem; }
@@ -103,6 +108,19 @@ function size(pr: PrView): string {
 /** GitHub's mark, inline, for the one link on a card that leaves the app. */
 const GITHUB_MARK = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>`;
 
+const KIND_LABEL = { transient: "network", config: "setup", input: "this PR", build: "build" } as const;
+
+/** One line under a failed PR: what kind of failure, and what happens next. */
+function failureNote(pr: PrView): string {
+  const f = pr.failure;
+  if (!f) return "";
+  const kind = KIND_LABEL[f.kind];
+  if (f.nextRetryAt !== undefined && !f.parked) {
+    return `${kind} · retrying in ${humanDelay(f.nextRetryAt - Date.now())} (attempt ${f.attempts} so far)`;
+  }
+  return `${kind} · ${parkedNote(f.kind)}`;
+}
+
 function row(pr: PrView): string {
   const approvedTitle = pr.approvers.length ? `approved by ${pr.approvers.join(", ")}` : "approved";
   // The whole card opens the PR's page — the explorer when ready, the
@@ -118,6 +136,7 @@ function row(pr: PrView): string {
     ${f ? `<div class="facts">${esc(f)}</div>` : ""}
     ${size(pr)}
     ${pr.error ? `<div class="why">${esc(pr.error)}</div>` : ""}
+    ${pr.failure ? `<div class="next">${esc(failureNote(pr))}</div>` : ""}
     ${last ? `<div class="last">${esc(last)}</div>` : ""}
   </div>
   <div class="side-actions">
@@ -125,6 +144,7 @@ function row(pr: PrView): string {
     ${pr.draft ? '<span class="pill draft">draft</span>' : ""}
     ${pr.approved ? `<span class="pill approved" title="${esc(approvedTitle)}">approved</span>` : ""}
     <span class="pill ${pr.state}">${pr.state}</span>
+    ${pr.state === "failed" ? '<button class="retry" type="button" title="Build this PR again now">retry</button>' : ""}
     <a class="gh" href="${esc(pr.prUrl)}" target="_blank" rel="noopener" title="Open on GitHub" aria-label="Open on GitHub">${GITHUB_MARK}</a>
     <button class="forget" type="button" title="Drop this PR from the server">forget</button>
   </div>
@@ -209,6 +229,18 @@ document.addEventListener("click", function (e) {
   if (button) {
     var key = button.closest(".row").dataset.key;
     fetch("/prs/" + encodeURIComponent(key), { method: "DELETE" }).then(poll, poll);
+    return;
+  }
+  /* Retry: adding a failed PR again is how the server retries it. */
+  var retry = e.target.closest(".retry");
+  if (retry) {
+    var m = /^([^/]+)\/([^#]+)#(\d+)$/.exec(retry.closest(".row").dataset.key);
+    if (!m) return;
+    fetch("/prs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ owner: m[1], repo: m[2], number: Number(m[3]) }),
+    }).then(poll, poll);
     return;
   }
   /* Anywhere else on a card opens its PR; its own links and buttons keep their meaning. */

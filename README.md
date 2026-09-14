@@ -195,6 +195,15 @@ its approval, above all — is passed along on every check without a rebuild. An
 approving a PR and having it reassigned, or unassigning and reassigning, is
 the deliberate way to ask for it again.
 
+A build that fails says what kind of failure it was, and that decides what
+happens next. A network failure is retried on a backoff (one minute, two,
+five, fifteen, thirty, then hourly) for a day. A failure in our own pipeline
+gets one more try, since the model is not deterministic, then parks until
+the PR's head moves. A setup problem (no token, a bad key) or a problem with
+the PR itself (a diff too large to slice) parks at once, with the reason on
+the card. Every failed card has a retry button, and a restart retries the
+network and setup failures, since a restart is when those get fixed.
+
 Once a PR is merged or closed, its page leaves the server's index on the next  
 check, so the index shows only what can still be acted on. Leaving the list is  
 not what triggers this — approval, unassignment and turning back into a draft  

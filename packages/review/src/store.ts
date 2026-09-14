@@ -21,7 +21,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, w
 import path from "node:path";
 import type { SliceExplorerInput } from "@deep-review/call-graph";
 import type { PrRef } from "@deep-review/pr";
-import type { AddOptions, PrFacts } from "./registry.js";
+import type { AddOptions, PrFacts, PrFailure } from "./registry.js";
 
 /** What a build produced that is worth keeping: everything but the page, which is re-rendered. */
 export interface StoredBuild {
@@ -45,6 +45,8 @@ export interface StoredPr extends PrRef {
   /** Why the build failed, when it did. */
   error?: string | undefined;
   failedAt?: number | undefined;
+  /** The failure's kind and count, so a restart can decide what to do with it. */
+  failure?: Pick<PrFailure, "kind" | "attempts" | "firstFailedAt" | "headSha"> | undefined;
 }
 
 export interface PrStore {
