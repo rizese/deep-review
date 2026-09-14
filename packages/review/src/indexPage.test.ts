@@ -101,9 +101,9 @@ describe("renderIndexPage tabs and approval", () => {
         view({ approved: true, approvers: ["alex", "sam"] }),
         view({ key: "a/b#2", number: 2, role: "authored", draft: true, author: "me" }),
       ]);
-    expect(html).toContain('data-key="a/b#1" data-path="/pr/a/b/1/" data-role="review" data-approved="true"');
+    expect(html).toContain('data-key="a/b#1" data-state="ready" data-path="/pr/a/b/1/" data-role="review" data-approved="true"');
     expect(html).toContain('<span class="pill approved" title="approved by alex, sam">approved</span>');
-    expect(html).toContain('data-key="a/b#2" data-path="/pr/a/b/1/" data-role="authored" data-approved="false"');
+    expect(html).toContain('data-key="a/b#2" data-state="ready" data-path="/pr/a/b/1/" data-role="authored" data-approved="false"');
     expect(html).toContain('<span class="pill draft">draft</span>');
     expect(html).toContain('<div class="name">a/b#2 · me</div>');
   });
@@ -117,8 +117,8 @@ describe("renderIndexPage tabs and approval", () => {
   it("makes the whole card the way into the PR, and keeps GitHub to one icon", () => {
     const html = renderIndexPage([view(), view({ key: "a/b#2", number: 2, state: "building", path: "/pr/a/b/2/" })]);
     // The card carries its path for the click handler; the title links there in every state.
-    expect(html).toContain('data-key="a/b#1" data-path="/pr/a/b/1/"');
-    expect(html).toContain('data-key="a/b#2" data-path="/pr/a/b/2/"');
+    expect(html).toContain('data-key="a/b#1" data-state="ready" data-path="/pr/a/b/1/"');
+    expect(html).toContain('data-key="a/b#2" data-state="building" data-path="/pr/a/b/2/"');
     expect(html).toContain('<a class="title" href="/pr/a/b/2/">');
     // The key is text, not a link out; GitHub is the icon in the action row.
     expect(html).toContain('<div class="name">a/b#1</div>');
