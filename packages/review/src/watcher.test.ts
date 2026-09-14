@@ -528,11 +528,11 @@ describe("pollOnce across repos", () => {
     // watcher asked for every PR the token could see, and six from a
     // personal repo nobody meant to watch landed on the server. Now a repo
     // is queried only by being named — the fake GitHub has PRs waiting in
-    // adambossy/panoply, and is never asked for them.
+    // elsewhere/panoply, and is never asked for them.
     watching("acme/widgets");
     const gh = github({
       "acme/widgets": [inRepo("acme/widgets", 1)],
-      "adambossy/panoply": [inRepo("adambossy/panoply", 3), inRepo("adambossy/panoply", 4)],
+      "elsewhere/panoply": [inRepo("elsewhere/panoply", 3), inRepo("elsewhere/panoply", 4)],
     });
     const handed: string[] = [];
     const state = await pollOnce({
@@ -561,7 +561,7 @@ describe("pollOnce across repos", () => {
     // Not an error: a fresh install has no file. But not silence either,
     // and above all not "everything" — the absence of a scope used to mean
     // the widest one, and that is the reading this removes.
-    const gh = github({ "adambossy/panoply": [inRepo("adambossy/panoply", 3)] });
+    const gh = github({ "elsewhere/panoply": [inRepo("elsewhere/panoply", 3)] });
     const messages: string[] = [];
     const state = await pollOnce({ list: gh.list, onProgress: (m) => messages.push(m) });
     expect(gh.asked).toEqual([]);
@@ -573,7 +573,7 @@ describe("pollOnce across repos", () => {
 
   it("polls nothing, and says so, when the file lists no repos", async () => {
     writeFileSync(watchConfigFile(), JSON.stringify({ repos: {} }));
-    const gh = github({ "adambossy/panoply": [inRepo("adambossy/panoply", 3)] });
+    const gh = github({ "elsewhere/panoply": [inRepo("elsewhere/panoply", 3)] });
     const messages: string[] = [];
     await pollOnce({ list: gh.list, onProgress: (m) => messages.push(m) });
     expect(gh.asked).toEqual([]);
@@ -585,7 +585,7 @@ describe("pollOnce across repos", () => {
     // also stops removing merged PRs from the server. And it must not be
     // read as "no scope", which used to mean the widest scope.
     writeFileSync(watchConfigFile(), "{ this is not json");
-    const gh = github({ "adambossy/panoply": [inRepo("adambossy/panoply", 3)] });
+    const gh = github({ "elsewhere/panoply": [inRepo("elsewhere/panoply", 3)] });
     const messages: string[] = [];
     const state = await pollOnce({ list: gh.list, onProgress: (m) => messages.push(m) });
     expect(gh.asked).toEqual([]);
@@ -597,7 +597,7 @@ describe("pollOnce across repos", () => {
     // A second repo: qualifier widens a GitHub search rather than narrowing
     // it, so an entry that carries one could reach into a repo the file
     // never named. It is left out, with a note, and the others go ahead.
-    watching(["acme/widgets", "is:open repo:adambossy/panoply"], "acme/gadgets");
+    watching(["acme/widgets", "is:open repo:elsewhere/panoply"], "acme/gadgets");
     const gh = github({});
     const messages: string[] = [];
     await pollOnce({ list: gh.list, onProgress: (m) => messages.push(m) });
