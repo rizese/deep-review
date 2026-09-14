@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { SCOPE_CARET } from "./codePane.js";
-import { panelRange, renderCallPathExplorerHtml, renderDefinitionPanel } from "./explorer.js";
-import { buildFileIndex } from "./html.js";
+import {
+  EXPLORER_CSS,
+  EXPLORER_NAV_JS,
+  renderDefinitionPanel,
+  renderPanel,
+} from "./explorer.js";
+import { buildFileIndex, SCOPE_JS } from "./html.js";
 import type { CallPathResult, DefinitionTarget, FunctionSnapshot, PathNode } from "./types.js";
 
 function snapshot(file: string, lines: string[]): FunctionSnapshot {
@@ -133,13 +138,19 @@ const result: CallPathResult = {
   ],
 };
 
-describe("renderCallPathExplorerHtml", () => {
-  const html = renderCallPathExplorerHtml(result);
+/** Every node's panel, in graph order — what a page built from this graph holds. */
+function renderPanels(graph: CallPathResult): string {
+  const index = buildFileIndex(graph.files);
+  return graph.nodes.map((n) => renderPanel(n, graph, index)).join("\n");
+}
 
-  it("renders a panel definition per node and the root in the track", () => {
-    expect(html.match(/data-node="mid\.ts#mid"/g)!.length).toBe(2); // track + defs
+describe("renderPanel", () => {
+  const html = renderPanels(result);
+
+  it("renders one panel per node", () => {
+    expect(html.match(/data-node="mid\.ts#mid"/g)!.length).toBe(1);
     expect(html).toContain('data-node="leaf.ts#leaf"');
-    expect(html).toContain('data-root="mid.ts#mid"');
+    expect(html).toContain('data-node="top.ts#top"');
   });
 
   it("marks outgoing calls as tappable with the callee's node id", () => {
@@ -178,7 +189,7 @@ describe("renderCallPathExplorerHtml", () => {
         },
       ],
     };
-    const page = renderCallPathExplorerHtml(many);
+    const page = renderPanels(many);
     const leafPanel = page.slice(page.lastIndexOf('data-node="leaf.ts#leaf"'), page.lastIndexOf('data-node="top.ts#top"'));
     // mid's one call plus top's five.
     expect(leafPanel).toContain("called by (6)");
@@ -206,10 +217,7 @@ describe("renderCallPathExplorerHtml", () => {
         },
       ],
     };
-    const page = renderCallPathExplorerHtml(duplicated);
-    // Both the track and panel-defs sections render a full copy of mid's
-    // panel; isolate the panel-defs copy the way the "every call site" test
-    // above does, so only one copy's rows are counted.
+    const page = renderPanels(duplicated);
     const midPanel = page.slice(page.lastIndexOf('data-node="mid.ts#mid"'), page.lastIndexOf('data-node="leaf.ts#leaf"'));
     expect(midPanel).toContain("called by (1)");
     expect(midPanel.match(/class="caller-row"/g)).toHaveLength(1);
@@ -266,26 +274,6 @@ describe("renderCallPathExplorerHtml", () => {
     expect(midPanel).not.toContain('diff-del-inner">function');
   });
 
-  it("includes the sliding rails and navigation script", () => {
-    expect(html).toContain('class="rail rail-left"');
-    expect(html).toContain('class="rail rail-right"');
-    expect(html).toContain('id="node-names"');
-    expect(html).toContain("--pos");
-  });
-
-  it("keeps one live element per panel, so a revisited panel comes back as the reader left it", () => {
-    // The defs are templates cloned once; after that the same element returns.
-    expect(html).toContain("var live = Object.create(null)");
-    expect(html).toContain("keep(id, def.cloneNode(true))");
-    expect(html).toContain("kept.parentNode === track && !rebuilding ? kept.cloneNode(true) : kept");
-  });
-
-  it("includes the clicked-symbol linking styles and behavior", () => {
-    expect(html).toContain(".sym-link");
-    expect(html).toContain(".sym-link.sym-dim");
-    expect(html).toContain("linkSymbols");
-  });
-
   it("marks each panel's own symbol name on its declaration line", () => {
     // mid's declaration "function mid(n) {" → the name span carries self-sym.
     expect(html).toContain('self-sym">mid</span>');
@@ -304,7 +292,7 @@ describe("renderCallPathExplorerHtml", () => {
 });
 
 describe("sticky scope header", () => {
-  const html = renderCallPathExplorerHtml(result);
+  const html = renderPanels(result);
 
   it("names the file and the scope of the first visible line, keyed to the embedded file", () => {
     const leafPanel = html.slice(
@@ -322,16 +310,24 @@ describe("sticky scope header", () => {
     expect(midPanel).toContain(`<div class="scope-bar" aria-expanded="true">${SCOPE_CARET}<span class="scope-path"><span class="name">mid.ts</span></span><span class="scope-sym"></span>`);
   });
 
-  it("includes the scroll-following script", () => {
-    expect(html).toContain("firstVisibleLine");
-    expect(html).toContain('addEventListener("scroll"');
+  it("is followed as the pane scrolls", () => {
+    expect(SCOPE_JS).toContain("firstVisibleLine");
+    expect(SCOPE_JS).toContain('addEventListener("scroll"');
   });
 });
 
-describe("panelRange", () => {
-  it("pads the declaration by ten lines each side, clamped to the file", () => {
-    expect(panelRange({ startLine: 20, endLine: 21 }, 40)).toEqual([10, 31]);
-    expect(panelRange({ startLine: 3, endLine: 35 }, 40)).toEqual([1, 40]);
+describe("the explorer's navigation script", () => {
+  it("keeps one live element per panel, so a revisited panel comes back as the reader left it", () => {
+    // The defs are templates cloned once; after that the same element returns.
+    expect(EXPLORER_NAV_JS).toContain("var live = Object.create(null)");
+    expect(EXPLORER_NAV_JS).toContain("keep(id, def.cloneNode(true))");
+    expect(EXPLORER_NAV_JS).toContain("kept.parentNode === track && !rebuilding ? kept.cloneNode(true) : kept");
+  });
+
+  it("includes the clicked-symbol linking styles and behavior", () => {
+    expect(EXPLORER_CSS).toContain(".sym-link");
+    expect(EXPLORER_CSS).toContain(".sym-link.sym-dim");
+    expect(EXPLORER_NAV_JS).toContain("linkSymbols");
   });
 });
 

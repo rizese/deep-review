@@ -89,15 +89,7 @@ export function writeWatcherState(state: WatcherState): void {
   writeFileSync(watcherStateFile(), JSON.stringify(state, null, 2));
 }
 
-/** Is that pid still there? Signal 0 asks without sending anything. */
-export function pidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
+export { pidAlive } from "./daemon.js";
 
 /**
  * Which of the currently-assigned PRs to hand over, and what to remember.
@@ -283,10 +275,6 @@ export async function pollOnce(deps: PollDeps = {}): Promise<WatcherState> {
     );
   }
 
-  // Note what is *not* set here: a workDir. The daemon keys one per PR
-  // under the state dir, so it is already durable and already separate.
-  // Pinning one here would put every clone and checkout in a single
-  // directory, and builds run two at a time.
   const options: AddOptions = { ...deps.options };
   const add =
     deps.add ??

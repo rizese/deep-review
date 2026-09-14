@@ -228,7 +228,6 @@ describe("pollOnce", () => {
       },
     });
     expect(handed).toBeDefined();
-    expect(handed).not.toHaveProperty("workDir");
   });
 
   it("survives a corrupt state file rather than refusing to start", () => {

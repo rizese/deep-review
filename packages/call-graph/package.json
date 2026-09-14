@@ -9,8 +9,6 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "cli": "tsx src/cli.ts",
-    "build": "tsup src/index.ts src/cli.ts --format esm --clean",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
@@ -19,11 +17,5 @@
     "diff": "^8.0.4",
     "pyright": "^1.1.390",
     "typescript": "^5.7.3"
-  },
-  "devDependencies": {
-    "@types/node": "^22.13.0",
-    "tsup": "^8.3.6",
-    "tsx": "^4.19.2",
-    "vitest": "^3.0.5"
   }
 }

@@ -15,7 +15,7 @@ import { createRequire } from "node:module";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import process from "node:process";
 import type { AddressInfo } from "node:net";
-import { renderSliceExplorerHtml, type SliceExplorerInput } from "@deep-review/call-graph";
+import { escapeHtml as esc } from "@deep-review/call-graph";
 import { renderBuildingPage, renderIndexPage } from "./indexPage.js";
 import {
   parsePrPath,
@@ -392,7 +392,7 @@ export async function startNavServer(options: NavServerOptions): Promise<NavServ
       return;
     }
     if (path === "/") {
-      sendHtml(res, 200, renderIndexPage(registry.list(), VERSION));
+      sendHtml(res, 200, renderIndexPage(registry.list()));
       return;
     }
     if (path === "/favicon.ico") {
@@ -433,49 +433,11 @@ export async function startNavServer(options: NavServerOptions): Promise<NavServ
   };
 }
 
+/** The key comes from the URL, so it is escaped: a loopback origin that also accepts POST /quit is no place for reflected markup. */
 function notHere(key: string): string {
   return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>${key} — not loaded</title></head>
-<body><p><code>${key}</code> is not loaded on this server.</p>
+<html lang="en"><head><meta charset="utf-8"><title>${esc(key)} — not loaded</title></head>
+<body><p><code>${esc(key)}</code> is not loaded on this server.</p>
 <p><a href="/">Every PR that is</a></p></body></html>
 `;
-}
-
-export interface ServeOptions {
-  /** The PR's head checkout the language services read. */
-  headDir: string;
-  /** What to render and serve; the session renders more panels from it. */
-  input: SliceExplorerInput;
-  port?: number | undefined;
-  sessionGraceMs?: number | undefined;
-  onProgress?: ((message: string) => void) | undefined;
-}
-
-/**
- * A server holding a single already-built PR — what `--no-daemon` runs, and
- * the shape the tests exercise. The page is rendered here rather than taken
- * from the caller so its `navBase` matches where the server mounts it; a
- * static `--out` copy is rendered separately, without one.
- */
-export async function serveExplorer(
-  options: ServeOptions,
-): Promise<NavServer & { pageUrl: string }> {
-  const [owner = "unknown", repo = "unknown"] = options.input.repo.split("/");
-  const ref: PrRef = { owner, repo, number: options.input.number };
-  const server = await startNavServer({
-    build: ({ navBase }) => {
-      const input = { ...options.input, navBase };
-      return Promise.resolve({
-        input,
-        headDir: options.headDir,
-        html: renderSliceExplorerHtml(input),
-      });
-    },
-    ...(options.port !== undefined ? { port: options.port } : {}),
-    ...(options.sessionGraceMs !== undefined ? { sessionGraceMs: options.sessionGraceMs } : {}),
-    ...(options.onProgress ? { onProgress: options.onProgress } : {}),
-  });
-  server.add(ref);
-  await server.registry.settled();
-  return { ...server, pageUrl: server.urlFor(ref) };
 }

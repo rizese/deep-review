@@ -38,9 +38,7 @@ describe("renderIndexPage", () => {
             total: { additions: 200, deletions: 35 },
           },
         }),
-      ],
-      "0",
-    );
+      ]);
     const row = /<div class="row ready"[\s\S]*?<div class="side-actions">/.exec(html)![0];
     expect(row).toContain("2 slices · 1 with a walkable call graph");
     expect(row).toContain(
@@ -56,9 +54,7 @@ describe("renderIndexPage", () => {
 
   it("shows one unsplit total for a PR whose report predates kinds", () => {
     const html = renderIndexPage(
-      [view({ size: { byKind: null, total: { additions: 7, deletions: 2 } } })],
-      "0",
-    );
+      [view({ size: { byKind: null, total: { additions: 7, deletions: 2 } } })]);
     expect(html).toContain(
       '<span class="delta-kind unclassified"><span class="plus">+7</span><span class="minus">−2</span></span>',
     );
@@ -66,12 +62,10 @@ describe("renderIndexPage", () => {
   });
 
   it("shows no size while a PR is still building, or when it changed nothing", () => {
-    const building = renderIndexPage([view({ state: "building", size: undefined })], "0");
+    const building = renderIndexPage([view({ state: "building", size: undefined })]);
     expect(building).not.toContain('class="delta"');
     const empty = renderIndexPage(
-      [view({ size: { byKind: null, total: { additions: 0, deletions: 0 } } })],
-      "0",
-    );
+      [view({ size: { byKind: null, total: { additions: 0, deletions: 0 } } })]);
     expect(empty).not.toContain('class="delta"');
   });
 });
@@ -79,9 +73,7 @@ describe("renderIndexPage", () => {
 describe("renderIndexPage tabs and approval", () => {
   it("offers a tab per role, counted, and a box to hide approved PRs", () => {
     const html = renderIndexPage(
-      [view(), view({ key: "a/b#2", number: 2, role: "authored" }), view({ key: "a/b#3", number: 3, role: "authored" })],
-      "0",
-    );
+      [view(), view({ key: "a/b#2", number: 2, role: "authored" }), view({ key: "a/b#3", number: 3, role: "authored" })]);
     expect(html).toContain('data-tab="review" aria-selected="true">For review<span class="count">1</span>');
     expect(html).toContain('data-tab="authored" aria-selected="false">My PRs<span class="count">2</span>');
     expect(html).toContain('<input type="checkbox" id="hide-approved"> Hide approved PRs');
@@ -92,9 +84,7 @@ describe("renderIndexPage tabs and approval", () => {
       [
         view({ approved: true, approvers: ["alex", "sam"] }),
         view({ key: "a/b#2", number: 2, role: "authored", draft: true, author: "me" }),
-      ],
-      "0",
-    );
+      ]);
     expect(html).toContain('data-key="a/b#1" data-path="/pr/a/b/1/" data-role="review" data-approved="true"');
     expect(html).toContain('<span class="pill approved" title="approved by alex, sam">approved</span>');
     expect(html).toContain('data-key="a/b#2" data-path="/pr/a/b/1/" data-role="authored" data-approved="false"');
@@ -105,11 +95,11 @@ describe("renderIndexPage tabs and approval", () => {
   it("lets the page hide a row, despite the row's own display", () => {
     // `.row` is a grid, and an author display beats the browser's [hidden]
     // rule — so without this, every tab showed every PR.
-    expect(renderIndexPage([view()], "0")).toContain(".row[hidden] { display: none; }");
+    expect(renderIndexPage([view()])).toContain(".row[hidden] { display: none; }");
   });
 
   it("makes the whole card the way into the PR, and keeps GitHub to one icon", () => {
-    const html = renderIndexPage([view(), view({ key: "a/b#2", number: 2, state: "building", path: "/pr/a/b/2/" })], "0");
+    const html = renderIndexPage([view(), view({ key: "a/b#2", number: 2, state: "building", path: "/pr/a/b/2/" })]);
     // The card carries its path for the click handler; the title links there in every state.
     expect(html).toContain('data-key="a/b#1" data-path="/pr/a/b/1/"');
     expect(html).toContain('data-key="a/b#2" data-path="/pr/a/b/2/"');
@@ -122,7 +112,7 @@ describe("renderIndexPage tabs and approval", () => {
   });
 
   it("sits in the shared chrome, with the count and the way home", () => {
-    const html = renderIndexPage([view(), view({ key: "a/b#2", number: 2 })], "0");
+    const html = renderIndexPage([view(), view({ key: "a/b#2", number: 2 })]);
     expect(html).toContain('<nav class="chrome"');
     expect(html).toContain('<a class="glass brand" href="/"');
     expect(html).toContain('<span class="count" title="PRs on this server">2</span>');
@@ -130,7 +120,7 @@ describe("renderIndexPage tabs and approval", () => {
   });
 
   it("renders a PR that predates roles as one for review, not approved", () => {
-    const html = renderIndexPage([view()], "0");
+    const html = renderIndexPage([view()]);
     expect(html).toContain('data-role="review" data-approved="false"');
     expect(html).not.toContain('class="pill approved"');
   });

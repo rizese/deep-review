@@ -7,7 +7,7 @@ import { FRAGMENT_KINDS } from "./types.js";
  * reference a fragment that does not exist, and the model never has to keep
  * two lists in sync. Stable fragment ids are derived afterwards.
  */
-export const agentFragmentSchema = z.object({
+const agentFragmentSchema = z.object({
   hunkId: z
     .string()
     .describe("The id from the `=== HUNK <id>` line, copied exactly."),
@@ -35,7 +35,7 @@ export const agentFragmentSchema = z.object({
     ),
 });
 
-export const agentSliceSchema = z.object({
+const agentSliceSchema = z.object({
   title: z
     .string()
     .min(1)
@@ -125,5 +125,3 @@ export const sliceReportSchema = z.object({
 });
 
 export type AgentOutput = z.infer<typeof agentOutputSchema>;
-export type AgentSlice = z.infer<typeof agentSliceSchema>;
-export type AgentFragment = z.infer<typeof agentFragmentSchema>;

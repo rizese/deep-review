@@ -30,7 +30,8 @@ function git(args: string[], cwd: string): string {
   });
 }
 
-export function defaultWorkDir(info: PrInfo): string {
+/** Where a PR's clone and worktrees live when the caller names no directory. */
+function defaultWorkDir(info: PrInfo): string {
   return path.join(
     os.tmpdir(),
     "deep-review",

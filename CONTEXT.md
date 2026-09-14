@@ -138,8 +138,7 @@ grainy gradient behind everything — and one full-width glass bar along the
 top carrying the wordmark (the way home), the server's PR count with a `+`
 that adds a PR by URL, and the light / system / dark switch. Rendered by
 `renderChrome` in `packages/call-graph/src/chrome.ts`, included by the slice
-explorer, the index and the building page; a static `--out` copy gets the
-wordmark alone, unlinked. Theme choice is `data-theme` on the root, stamped
+explorer, the index and the building page. Theme choice is `data-theme` on the root, stamped
 before first paint from localStorage; "system" is its absence.
 _Avoid_: header (the explorer's sidebar and the report pages have headers of
 their own), navbar

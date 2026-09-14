@@ -1,6 +1,8 @@
 # Deep Review
 
-A full-stack TypeScript tool for code review.
+A local tool for reading pull requests: an agent slices the PR into the
+changes that matter, and a call-graph walker lets you follow each slice
+through the code that calls it and the code it calls.
 
 Project vocabulary lives in [CONTEXT.md](./CONTEXT.md).
 
@@ -8,7 +10,6 @@ Project vocabulary lives in [CONTEXT.md](./CONTEXT.md).
 
 ```sh
 pnpm install
-pnpm dev        # server on :3001, web on :5173
 ```
 
 Authenticate to GitHub once. Nothing here shells out to `gh`, so the login on
@@ -72,8 +73,8 @@ pnpm --filter @deep-review/review cli stop
 
 After `pnpm build`, the same CLI is on your path as `pr-review`, so those read
 `pr-review 2950 --repo vercel/swr`. `--help` lists every flag, including
-`--max-graphs <n>` to cap the slow call-graph analysis, `--save <file>` to keep
-this run's slice JSON, and `--out <file>` for a static copy of the page.
+`--max-graphs <n>` to cap the slow call-graph analysis. Every run's slice JSON
+is kept under `~/.deep-review/slices/` for `--slices` to reuse.
 
 Environment: a model key is required unless `--slices` is given —
 `OPENAI_API_KEY` for the default model (`gpt-5.6-sol`), `ANTHROPIC_API_KEY` for
@@ -86,12 +87,9 @@ there instead of being passed per invocation.
 
 ## Structure
 
-- `apps/server` — [Hono](https://hono.dev) API on Node. Reviews and findings, backed by an in-memory store (swap in a database via `src/store.ts`).
-- `apps/web` — Vite + React UI. Proxies `/api` to the server in dev.
-- `packages/shared` — Zod schemas and types shared by both (reviews, findings, severities).
 - `packages/pr` — one PR's raw material: URL parsing, GitHub metadata, linked Linear tickets, base/head worktrees, and unified-diff parsing. Depended on by the two analysis packages below.
-- `packages/call-graph` — analyze how a function's callers/callees change across a GitHub PR, using the TypeScript language service's call hierarchy. Includes an HTML report generator and CLI.
-- `packages/slicer` — break a PR's diff into prioritized slices with an agent. Includes a CLI.
+- `packages/call-graph` — analyze how a function's callers/callees change across a GitHub PR, using the TypeScript language service's call hierarchy (and Pyright for Python). Also renders the explorer pages.
+- `packages/slicer` — break a PR's diff into prioritized slices with an agent.
 - `packages/review` — the two together: slices on the vertical axis, call graphs on the horizontal. Includes the `pr-review` CLI.
 
 
@@ -103,22 +101,12 @@ Run from the repo root:
 
 | Command          | What it does                           |
 | ---------------- | -------------------------------------- |
-| `pnpm dev`       | Start server and web app in watch mode |
 | `pnpm build`     | Build every package                    |
 | `pnpm typecheck` | Type-check every package               |
 | `pnpm test`      | Run all tests (Vitest)                 |
 
 
 
-
-## API
-
-- `GET /api/health`
-- `GET /api/reviews` · `POST /api/reviews`
-- `GET /api/reviews/:id` · `PATCH /api/reviews/:id/status`
-- `GET /api/reviews/:id/findings` · `POST /api/reviews/:id/findings`
-
-Request/response shapes live in `packages/shared/src/index.ts`.
 
 ## Watching your assigned PRs
 

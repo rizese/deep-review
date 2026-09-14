@@ -138,28 +138,6 @@ export interface RelatedFunction {
   renamedFrom?: string;
 }
 
-export interface TargetFunction {
-  name: string;
-  before: FunctionSnapshot | null;
-  after: FunctionSnapshot | null;
-  hunks: DiffHunk[];
-  changedInPr: boolean;
-  /** When the PR renamed the function, its name before the PR. */
-  renamedFrom?: string;
-}
-
-export interface CallGraphResult {
-  prUrl: string;
-  prTitle: string;
-  functionName: string;
-  base: { ref: string; sha: string };
-  head: { ref: string; sha: string };
-  target: TargetFunction;
-  callers: RelatedFunction[];
-  callees: RelatedFunction[];
-  files: EmbeddedFile[];
-}
-
 /** One function in a recursively-walked call graph. */
 export interface PathNode {
   /** Stable id: `<file>#<name>`. */

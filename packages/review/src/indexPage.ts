@@ -225,7 +225,7 @@ apply();
 setInterval(poll, 2000);
 `;
 
-export function renderIndexPage(prs: PrView[], _version: string): string {
+export function renderIndexPage(prs: PrView[]): string {
   const authored = prs.filter((pr) => pr.role === "authored");
   const review = prs.filter((pr) => pr.role !== "authored");
   return `<!doctype html>

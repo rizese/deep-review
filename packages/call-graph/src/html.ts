@@ -1,5 +1,3 @@
-import { renderCodePane } from "./codePane.js";
-import { fileDiffRows, hunkRows, markIntraLine, renderDiffBlock, rowsWidth, segmentRows } from "./diffView.js";
 import {
   escapeHtml as esc,
   identifierMarks,
@@ -13,12 +11,9 @@ import {
   type Token,
 } from "./highlight.js";
 import type {
-  CallGraphResult,
   DiffHunk,
   EmbeddedFile,
-  FunctionSnapshot,
   RelatedFunction,
-  SourceSegment,
   SymbolRange,
 } from "./types.js";
 
@@ -177,165 +172,8 @@ export function gapRow(entry: FileEntry, from: number, to: number): string {
 }
 
 
-interface BlockOptions {
-  /** Embedded file backing this block; enables expanders when `gaps`. */
-  entry?: FileEntry | undefined;
-  gaps?: boolean;
-  decorations?: Decorations;
-  /** Tokenizer language for non-embedded segments (default from entry, else ts). */
-  lang?: Language;
-}
-
-/** Render source segments as a code block, with expander gaps between/around. */
-export function renderCodeBlock(segments: SourceSegment[], opts: BlockOptions): string {
-  const { entry, decorations } = opts;
-  const gaps = Boolean(opts.gaps && entry);
-  const width = entry
-    ? String(entry.lines.length).length
-    : String(Math.max(...segments.map((s) => s.startLine + s.lines.length - 1), 1)).length;
-
-  const rows: string[] = [];
-  let previousEnd = 0;
-  for (const segment of segments) {
-    if (gaps && entry) {
-      rows.push(gapRow(entry, previousEnd + 1, segment.startLine - 1));
-    } else if (previousEnd > 0 && segment.startLine > previousEnd + 1) {
-      rows.push(
-        `<span class="line elide">${" ".repeat(width)}⋯ ${segment.startLine - previousEnd - 1} lines omitted ⋯</span>`,
-      );
-    }
-    const lang = opts.lang ?? entry?.lang ?? "ts";
-    const localTokens = entry ? null : tokenizeLines(segment.lines, lang);
-    segment.lines.forEach((text, i) => {
-      const n = segment.startLine + i;
-      const deco = decorations?.get(n);
-      for (const deleted of deco?.deletedBefore ?? []) {
-        const html = renderLine(deleted, tokenizeLines([deleted], lang)[0]!, []);
-        rows.push(lineRow("−", width, html, ["diff-del"]));
-      }
-      const content = entry
-        ? fileLineHtml(entry, n, deco?.marks ?? []) || esc(text)
-        : renderLine(text, localTokens![i]!, deco?.marks ?? []);
-      rows.push(lineRow(n, width, content, deco?.cls ?? []));
-    });
-    previousEnd = segment.startLine + segment.lines.length - 1;
-  }
-  if (gaps && entry && previousEnd < entry.lines.length) {
-    rows.push(gapRow(entry, previousEnd + 1, entry.lines.length));
-  }
-  return `<pre class="source" data-w="${width}"><span class="lines">${rows.join("")}</span></pre>`;
-}
-
 // ---------------------------------------------------------------------------
-// Diff hunks (target card): unified view with expander gaps around
-
-/** Context shown around each change in a hunks-only block, like `git diff`. */
-const HUNK_CONTEXT = 3;
-
-/** A function's hunks as one unified diff, with expandable context when the file is embedded. */
-export function renderHunksBlock(
-  hunks: DiffHunk[],
-  entry: FileEntry | undefined,
-  lang?: Language,
-): string {
-  if (!hunks.length) return "";
-  const rows = entry ? fileDiffRows(entry.lines, hunks, { context: HUNK_CONTEXT }) : hunkRows(hunks);
-  markIntraLine(rows);
-  return renderDiffBlock(rows, { width: rowsWidth(rows, entry), lang: lang ?? entry?.lang ?? "ts", entry });
-}
-
-// ---------------------------------------------------------------------------
-// Snapshots (one side of a caller/callee/target)
-
-interface SnapshotDisplay {
-  /** Highlight the call to the target inside the source (callers). */
-  highlightCallSites?: boolean;
-  /** List call sites separately — they live in another file (callees). */
-  listCallSites?: boolean;
-  /** Location only, no source body (the target — its hunks show the change). */
-  hideSource?: boolean;
-  /** When diff hunks exist, show only them — no before/after source (callees). */
-  diffOnly?: boolean;
-}
-
-/** Same code, ignoring line-number shifts from edits elsewhere in the file. */
-function sameSource(a: FunctionSnapshot, b: FunctionSnapshot): boolean {
-  return (
-    a.file === b.file &&
-    a.source.length === b.source.length &&
-    a.source.every(
-      (segment, i) => segment.lines.join("\n") === b.source[i]!.lines.join("\n"),
-    )
-  );
-}
-
-function callSiteDecorations(snapshot: FunctionSnapshot): Decorations {
-  const decorations: Decorations = new Map();
-  for (const site of snapshot.callSites) {
-    const marks: Mark[] =
-      site.startColumn !== undefined && site.endColumn !== undefined
-        ? [{ start: site.startColumn, end: site.endColumn, cls: "callsite" }]
-        : [];
-    decorations.set(site.line, { cls: ["hl"], marks });
-  }
-  return decorations;
-}
-
-function renderSnapshot(
-  side: "before" | "after" | "both",
-  snapshot: FunctionSnapshot | null,
-  index: FileIndex,
-  display: SnapshotDisplay = {},
-): string {
-  if (!snapshot) {
-    return `<div class="side side-${side}"><span class="missing">not present ${side === "before" ? "before" : "after"} the PR</span></div>`;
-  }
-  const entry = index.get(`${side === "both" ? "after" : side}:${snapshot.file}`);
-  const sites = display.listCallSites
-    ? snapshot.callSites
-        .map(
-          (s) =>
-            `<li><span class="loc">L${s.line}</span> <code>${esc(s.snippet)}</code></li>`,
-        )
-        .join("")
-    : "";
-  const body = display.hideSource
-    ? ""
-    : renderCodeBlock(snapshot.source, {
-        entry,
-        gaps: true,
-        lang: languageOf(snapshot.file),
-        decorations: display.highlightCallSites
-          ? callSiteDecorations(snapshot)
-          : new Map(),
-      });
-  return `<div class="side side-${side}">
-    <div class="side-loc"><code>${esc(snapshot.file)}:${snapshot.startLine}–${snapshot.endLine}</code>${
-      snapshot.truncated ? ' <span class="badge">elided</span>' : ""
-    }</div>
-    ${sites ? `<div class="call-sites-label">call sites in target</div><ul class="call-sites">${sites}</ul>` : ""}
-    ${body}
-  </div>`;
-}
-
-/** Render before/after; a function identical on both sides gets one block. */
-function renderSides(
-  before: FunctionSnapshot | null,
-  after: FunctionSnapshot | null,
-  index: FileIndex,
-  display: SnapshotDisplay,
-): string {
-  if (before && after && sameSource(before, after)) {
-    return renderSnapshot("both", after, index, display);
-  }
-  return (
-    renderSnapshot("before", before, index, display) +
-    renderSnapshot("after", after, index, display)
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Related functions and groups
+// Presence badge
 
 export function presenceBadge(
   fn: Pick<RelatedFunction, "presence" | "changedInPr" | "renamedFrom">,
@@ -351,40 +189,6 @@ export function presenceBadge(
   return `<span class="badge ${fn.presence === "after" ? "added" : "removed"}">${
     fn.presence === "after" ? "added in PR" : "removed in PR"
   }</span>`;
-}
-
-function renderRelated(
-  fn: RelatedFunction,
-  index: FileIndex,
-  display: SnapshotDisplay,
-): string {
-  const diffOnly = Boolean(display.diffOnly && fn.hunks.length);
-  return `<details class="fn presence-${fn.presence}${fn.changedInPr ? " is-changed" : ""}">
-    <summary><code class="fn-name">${esc(fn.name)}</code> <code class="fn-file">${esc(fn.file)}</code> ${presenceBadge(fn)}</summary>
-    <div class="fn-body">
-      ${diffOnly ? "" : renderSides(fn.before, fn.after, index, display)}
-      ${fn.hunks.length ? `<div class="hunks">${renderHunksBlock(fn.hunks, undefined, languageOf(fn.file))}</div>` : '<p class="missing">no diff hunks touch this function</p>'}
-    </div>
-  </details>`;
-}
-
-function renderGroup(
-  title: string,
-  kind: "callers" | "callees",
-  fns: RelatedFunction[],
-  index: FileIndex,
-): string {
-  const display: SnapshotDisplay =
-    kind === "callers"
-      ? { highlightCallSites: true }
-      : { listCallSites: true, diffOnly: true };
-  const items = fns.length
-    ? fns.map((fn) => renderRelated(fn, index, display)).join("\n")
-    : '<p class="missing">none found</p>';
-  return `<section class="group group-${kind}">
-    <h2>${title} <span class="count">${fns.length}</span></h2>
-    ${items}
-  </section>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -474,18 +278,11 @@ export const CSS = `
   header h1 { margin-bottom: 0.2rem; letter-spacing: -0.015em; }
   header .meta { color: var(--ink-soft); font-size: 0.9rem; }
   header a { color: inherit; }
-  .controls { display: flex; gap: 0.5rem; align-items: center; margin: 1rem 0; flex-wrap: wrap; }
-  .controls button { padding: 0.3rem 0.8rem; cursor: pointer; border: 1px solid var(--line-c);
-                     border-radius: 6px; background: var(--panel); color: var(--ink-soft); font: inherit; }
-  .controls button:hover { color: var(--accent); border-color: var(--accent); }
-  .controls button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
-  section.group h2 { border-bottom: 1px solid var(--line-c); padding-bottom: 0.3rem; }
   .count { color: var(--ink-faint); font-size: 0.8em; }
   details.fn { border: 1px solid var(--line-c); border-radius: 8px; margin: 0.5rem 0; background: var(--panel); }
   details.fn summary { padding: 0.5rem 0.8rem; cursor: pointer; display: flex; gap: 0.6rem; align-items: baseline; flex-wrap: wrap; }
   details.fn .fn-name { font-weight: 700; }
   details.fn .fn-file { color: var(--ink-faint); }
-  .fn-body { padding: 0 0.8rem 0.8rem; }
   .badge { font-size: 0.68rem; font-weight: 500; padding: 0.14rem 0.55rem; border-radius: 999px;
            background: var(--panel-2); color: var(--ink-soft); border: 1px solid var(--line-c);
            font-variant-numeric: tabular-nums; }
@@ -493,14 +290,6 @@ export const CSS = `
   .badge.renamed { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
   .badge.added { background: var(--add-bg); color: var(--add-edge); border-color: transparent; }
   .badge.removed { background: var(--del-bg); color: var(--del-edge); border-color: transparent; }
-  .side { margin: 0.4rem 0; padding: 0.4rem 0.6rem; border-left: 3px solid var(--line-c); }
-  .side-before { border-left-color: var(--del-edge); }
-  .side-after { border-left-color: var(--add-edge); }
-  .side::before { display: block; font-size: 0.7rem; text-transform: uppercase; color: var(--ink-faint); }
-  .side-before::before { content: "before"; }
-  .side-after::before { content: "after"; }
-  .side-both::before { content: "before & after — identical"; }
-  .call-sites { margin: 0.3rem 0 0; padding-left: 1.2rem; }
   .call-sites-label { font-size: 0.7rem; text-transform: uppercase; color: var(--ink-faint); margin-top: 0.4rem; }
   .loc { color: var(--ink-faint); font-size: 0.8em; }
   .missing { color: var(--ink-faint); font-style: italic; }
@@ -628,9 +417,6 @@ export const CSS = `
   .gap-btn:hover { background: var(--accent-soft); }
   .gap-count { color: var(--ink-faint); }
   .gap-crumb { color: var(--ink-soft); font-family: var(--mono); margin-left: auto; }
-  .target-card { border: 1px solid var(--line-c); border-radius: 12px; padding: 0.8rem 1rem; margin-top: 1.5rem; background: var(--panel); }
-  .target-card h2 { margin: 0 0 0.4rem; }
-  body[data-view="before"] .side-after, body[data-view="after"] .side-before { display: none; }
 `;
 
 /** Expander behavior shared by all layouts. Written injection-safe (no template literals). */
@@ -860,104 +646,8 @@ export function renderDataBlob(index: FileIndex): string {
   return JSON.stringify({ step: EXPAND_STEP, files }).replaceAll("</", "<\\/");
 }
 
-export interface PageMeta {
-  prUrl: string;
-  prTitle: string;
-  functionName: string;
-  base: { ref: string; sha: string };
-  head: { ref: string; sha: string };
-}
-
-export function pageHead(result: PageMeta, extraCss: string): string {
-  return `<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(result.functionName)} — PR call graph</title>
-<style>${CSS}${extraCss}</style>`;
-}
-
-export function pageHeader(result: PageMeta): string {
-  return `<header>
-  <h1><code>${esc(result.functionName)}</code></h1>
-  <p class="meta">
-    <a href="${esc(result.prUrl)}">${esc(result.prTitle)}</a> ·
-    ${esc(result.base.ref)} <code>${esc(result.base.sha.slice(0, 8))}</code> →
-    <code>${esc(result.head.sha.slice(0, 8))}</code>
-  </p>
-</header>`;
-}
-
-export function dataScripts(result: unknown, index: FileIndex): string {
-  return `<script type="application/json" id="call-graph-data">${JSON.stringify(result).replaceAll("</", "<\\/")}</script>
-<script type="application/json" id="render-data">${renderDataBlob(index)}</script>`;
-}
-
 // ---------------------------------------------------------------------------
-// Stacked layout (callers / target / callees, top to bottom)
-
-/** Render an analysis result as a self-contained HTML page. */
-export function renderCallGraphHtml(result: CallGraphResult): string {
-  const index = buildFileIndex(result.files);
-  const { target } = result;
-  const targetEntry =
-    index.get(`after:${target.after?.file ?? ""}`) ??
-    index.get(`before:${target.before?.file ?? ""}`);
-
-  return `<!doctype html>
-<html lang="en">
-<head>
-${pageHead(result, "\n  body { max-width: 60rem; }")}
-</head>
-<body data-view="both">
-${pageHeader(result)}
-
-<div class="controls">
-  <span>Show:</span>
-  <button data-view="both" aria-pressed="true">Both</button>
-  <button data-view="before" aria-pressed="false">Before</button>
-  <button data-view="after" aria-pressed="false">After</button>
-  <span style="flex:1"></span>
-  <button id="expand-all">Expand all</button>
-  <button id="collapse-all">Collapse all</button>
-</div>
-
-${renderGroup("Callers", "callers", result.callers, index)}
-
-<section class="target-card">
-  <h2>Target: <code>${esc(target.name)}</code>
-    ${target.changedInPr ? '<span class="badge changed">changed</span>' : '<span class="badge">unchanged</span>'}
-  </h2>
-  ${renderSides(target.before, target.after, index, { hideSource: true })}
-  ${target.hunks.length ? `<div class="hunks">${renderHunksBlock(target.hunks, targetEntry)}</div>` : ""}
-</section>
-
-${renderGroup("Callees", "callees", result.callees, index)}
-
-${dataScripts(result, index)}
-<script>
-${GAP_JS}
-${WRAP_JS}
-${SCOPE_JS}
-  for (const button of document.querySelectorAll('.controls button[data-view]')) {
-    button.addEventListener("click", () => {
-      document.body.dataset.view = button.dataset.view;
-      for (const other of document.querySelectorAll('.controls button[data-view]')) {
-        other.setAttribute("aria-pressed", String(other === button));
-      }
-    });
-  }
-  const setAll = (open) => {
-    for (const details of document.querySelectorAll("details.fn")) details.open = open;
-  };
-  document.getElementById("expand-all").addEventListener("click", () => setAll(true));
-  document.getElementById("collapse-all").addEventListener("click", () => setAll(false));
-</script>
-</body>
-</html>
-`;
-}
-
-// ---------------------------------------------------------------------------
-// Columns layout (callers | target | selected callee)
+// Diff decorations over a file's own lines
 
 /** New-file line numbers added by these hunks. */
 export function addedLines(hunks: DiffHunk[]): Set<number> {
@@ -993,208 +683,4 @@ export function deletedLinesByPosition(hunks: DiffHunk[]): Map<number, string[]>
     }
   }
   return deleted;
-}
-
-/**
- * Tint PR-added lines and interleave PR-removed lines within a function's
- * span, so its new-side source reads as a unified diff.
- */
-export function diffDecorations(
-  decorations: Decorations,
-  hunks: DiffHunk[],
-  startLine: number,
-  endLine: number,
-): void {
-  for (const line of addedLines(hunks)) {
-    if (line >= startLine && line <= endLine) {
-      decorations.set(line, { ...decorations.get(line), cls: ["diff-add"] });
-    }
-  }
-  for (const [line, texts] of deletedLinesByPosition(hunks)) {
-    if (line >= startLine && line <= endLine + 1) {
-      decorations.set(line, { ...decorations.get(line), deletedBefore: texts });
-    }
-  }
-}
-
-function calleePanel(fn: RelatedFunction, i: number, index: FileIndex): string {
-  return `<article class="callee-panel" data-idx="${i}" hidden>
-    <h3><code class="fn-name">${esc(fn.name)}</code> <code class="fn-file">${esc(fn.file)}</code> ${presenceBadge(fn)}</h3>
-    <p class="from-site missing"></p>
-    ${
-      fn.hunks.length
-        ? `<div class="hunks">${renderHunksBlock(fn.hunks, undefined, languageOf(fn.file))}</div>`
-        : renderSides(fn.before, fn.after, index, {})
-    }
-  </article>`;
-}
-
-/**
- * Three-column variant: callers | target | callee. Clicking a callee call
- * site in the target's source selects which callee shows on the right.
- */
-export function renderCallGraphColumnsHtml(result: CallGraphResult): string {
-  const index = buildFileIndex(result.files);
-  const { target } = result;
-  const side: "before" | "after" = target.after ? "after" : "before";
-  const snapshot = target.after ?? target.before;
-  if (!snapshot) throw new Error("target function has no source on either side");
-  const entry = index.get(`${side}:${snapshot.file}`);
-
-  // Decorate the target's source: PR-added lines tinted, PR-removed lines
-  // interleaved in red, callee calls clickable.
-  const decorations: Decorations = new Map();
-  if (side === "after") {
-    diffDecorations(decorations, target.hunks, snapshot.startLine, snapshot.endLine);
-  }
-  result.callees.forEach((callee, i) => {
-    const sites = (side === "after" ? callee.after : callee.before)?.callSites ?? [];
-    for (const site of sites) {
-      if (site.startColumn === undefined || site.endColumn === undefined) continue;
-      const existing = decorations.get(site.line) ?? {};
-      decorations.set(site.line, {
-        ...existing,
-        marks: [
-          ...(existing.marks ?? []),
-          {
-            start: site.startColumn,
-            end: site.endColumn,
-            cls: "csite",
-            attrs: `data-callee="${i}" role="button" tabindex="0"`,
-          },
-        ],
-      });
-    }
-  });
-
-  // The target's segments as diff rows (no hunks: plain source), with
-  // expander gaps over the rest of the file when it is embedded.
-  const targetRows = segmentRows(snapshot.source, []);
-  if (entry) {
-    const first = snapshot.source[0]?.startLine ?? 1;
-    const last = snapshot.source.at(-1);
-    const lastLine = last ? last.startLine + last.lines.length - 1 : 0;
-    if (first > 1) targetRows.unshift({ kind: "gap", from: 1, to: first - 1 });
-    if (lastLine < entry.lines.length) targetRows.push({ kind: "gap", from: lastLine + 1, to: entry.lines.length });
-  }
-  const targetPane = renderCodePane({
-    file: snapshot.file,
-    entry,
-    rows: targetRows,
-    lang: languageOf(snapshot.file),
-    decorations,
-  });
-
-  const columnsCss = `
-  body.columns { max-width: none; padding: 1rem 1.2rem 2rem; }
-  .cols {
-    --rail: 34px; --gap: 12px;
-    position: relative; display: flex; gap: var(--gap);
-    height: calc(100vh - 130px); overflow: hidden;
-  }
-  .col {
-    flex: none; width: calc((100% - var(--rail) - 2 * var(--gap)) / 2);
-    height: 100%; overflow: auto; box-sizing: border-box;
-    border: 1px solid rgba(128,128,128,0.3); border-radius: 8px; padding: 0.6rem 0.8rem;
-  }
-  /* iOS-style push: slide the strip left by animating the first column's margin. */
-  .col-callers { margin-left: 0; transition: margin-left 0.4s cubic-bezier(0.32, 0.72, 0, 1); }
-  .cols.slid .col-callers { margin-left: calc(1.5 * var(--rail) - 50%); }
-  .col-callees { visibility: hidden; }
-  .cols.has-selection .col-callees { visibility: visible; }
-  .col > h2 { position: sticky; top: -0.6rem; margin: -0.6rem -0.8rem 0.5rem; padding: 0.6rem 0.8rem; background: Canvas; border-bottom: 1px solid rgba(128,128,128,0.3); font-size: 1rem; z-index: 1; }
-  .placeholder { opacity: 0.6; font-style: italic; }
-  .rail {
-    position: absolute; top: 0; bottom: 0; width: var(--rail); z-index: 2;
-    display: none; align-items: center; justify-content: center;
-    border: 1px solid rgba(128,128,128,0.35); border-radius: 8px;
-    background: Canvas; color: var(--accent); cursor: pointer;
-    writing-mode: vertical-rl; text-orientation: mixed;
-    font: 600 0.75rem ui-sans-serif, system-ui, sans-serif;
-    letter-spacing: 0.05em; padding: 0.6rem 0;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .rail:hover { background: var(--callsite-bg); }
-  .rail-left { left: 0; }
-  .rail-right { right: 0; }
-  .cols.slid .rail-left { display: flex; }
-  .cols.has-selection:not(.slid) .rail-right { display: flex; }
-`;
-
-  return `<!doctype html>
-<html lang="en">
-<head>
-${pageHead(result, columnsCss)}
-</head>
-<body class="columns" data-view="both">
-${pageHeader(result)}
-
-<div class="cols">
-  <button class="rail rail-left" title="Back to callers">◀ Callers</button>
-  <button class="rail rail-right" title="Show last callee">callee ▶</button>
-  <section class="col col-callers">
-    <h2>Callers <span class="count">${result.callers.length}</span></h2>
-    ${
-      result.callers.length
-        ? result.callers
-            .map((fn) => renderRelated(fn, index, { highlightCallSites: true }))
-            .join("\n")
-        : '<p class="missing">none found</p>'
-    }
-  </section>
-
-  <section class="col col-target">
-    <h2>Target: <code>${esc(target.name)}</code>
-      ${target.changedInPr ? '<span class="badge changed">changed</span>' : '<span class="badge">unchanged</span>'}
-    </h2>
-    <div class="side-loc"><code>${esc(snapshot.file)}:${snapshot.startLine}–${snapshot.endLine}</code> <span class="badge">${side}</span></div>
-    <p class="missing">click a highlighted call to open that callee →</p>
-    ${targetPane}
-  </section>
-
-  <section class="col col-callees">
-    <h2>Callee</h2>
-    <p class="placeholder">Click a call site in the target to show the callee here.</p>
-    ${result.callees.map((fn, i) => calleePanel(fn, i, index)).join("\n")}
-  </section>
-</div>
-
-${dataScripts(result, index)}
-<script>
-${GAP_JS}
-${WRAP_JS}
-${SCOPE_JS}
-  var cols = document.querySelector(".cols");
-  var railRight = document.querySelector(".rail-right");
-  document.addEventListener("click", function (e) {
-    var site = e.target.closest(".csite");
-    if (!site) return;
-    var idx = site.dataset.callee;
-    var panels = document.querySelectorAll(".callee-panel");
-    for (var i = 0; i < panels.length; i++) panels[i].hidden = panels[i].dataset.idx !== idx;
-    var placeholder = document.querySelector(".col-callees .placeholder");
-    if (placeholder) placeholder.hidden = true;
-    var active = document.querySelectorAll(".csite.active");
-    for (var j = 0; j < active.length; j++) active[j].classList.remove("active");
-    site.classList.add("active");
-    var panel = document.querySelector('.callee-panel[data-idx="' + idx + '"]');
-    var line = site.closest(".line");
-    if (panel && line) {
-      panel.querySelector(".from-site").textContent = "called from: " + line.textContent.trim();
-    }
-    var name = panel && panel.querySelector(".fn-name");
-    if (name) railRight.textContent = name.textContent + " \\u25b6";
-    cols.classList.add("has-selection", "slid");
-    document.querySelector(".col-callees").scrollTop = 0;
-  });
-  document.querySelector(".rail-left").addEventListener("click", function () {
-    cols.classList.remove("slid");
-  });
-  railRight.addEventListener("click", function () {
-    cols.classList.add("slid");
-  });
-</script>
-</body>
-</html>
-`;
 }

@@ -1,20 +1,10 @@
 import { execFile } from "node:child_process";
-import { existsSync, fstatSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { parseArgs } from "node:util";
-import { renderSliceExplorerHtml } from "@deep-review/call-graph";
-import { parsePrTarget, prUrl } from "@deep-review/pr";
-import {
-  apiKeyEnvVars,
-  DEFAULT_MODEL,
-  defaultOutFile,
-  hasApiKeyForModel,
-  loadSliceReport,
-  slicePr,
-  writeSliceReport,
-} from "@deep-review/slicer";
-import { explorerInputFromReport } from "./build.js";
+import { parsePrTarget } from "@deep-review/pr";
+import { apiKeyEnvVars, DEFAULT_MODEL, hasApiKeyForModel, loadSliceReport } from "@deep-review/slicer";
 import {
   addPrToServer,
   ensureServer,
@@ -35,7 +25,7 @@ import {
   watcherLogFile,
 } from "./launchAgent.js";
 import type { AddOptions, PrRef, PrView } from "./registry.js";
-import { serveExplorer, VERSION } from "./serve.js";
+import { VERSION } from "./serve.js";
 import {
   addWatchedRepo,
   exampleWatchConfig,
@@ -76,26 +66,19 @@ Options:
   --repo <owner/repo>  Repo a bare PR number refers to (default: $DEEP_REVIEW_REPO);
                     with watch, a repo to add to the watch list
   --slices <file>   Reuse a saved slice JSON instead of running the agent
-  --save <file>     Also write the slice JSON from this run
+                    (every run's JSON is kept under ~/.deep-review/slices)
   --wait            Stay attached until the added PRs are built
-  --out <file>      Build locally and write the page here as a static copy
-                    (navigation inert); implies --no-daemon
-  --no-serve        With --out: write it and exit without serving
-  --no-daemon       Build and serve in this process, for this PR alone;
-                    Ctrl-C stops it (the pre-daemon behavior)
   --off             watch: stop watching.
   --interval <s>    watch: seconds between checks (default: ${DEFAULT_INTERVAL_MS / 1000})
   --foreground      watch: run the loop here instead of in the background
   --force           watch: install even from a path that may not outlive today
-  --port <n>        serve/--no-daemon: listen on this port (default: 7331, or
+  --port <n>        serve: listen on this port (default: 7331, or
                     $DEEP_REVIEW_PORT; a free one if that is taken)
-  --concurrency <n> serve: how many PRs may build at once (default: 2)
   --max-graphs <n>  Analyze at most n slices' call graphs (default: all)
   --debug-marks     Hold Shift on the page to see why each symbol is marked as it is
-  --work-dir <d>    Cache the clone/worktrees here instead of the tmp dir
   --model <id>      Model to use for slicing (default: ${DEFAULT_MODEL})
   --no-open         Don't open the page(s) in a browser
-  --quiet           Only print the URL(s) (or, with --no-serve, the output path)
+  --quiet           Only print the URL(s)
 
 Environment:
   OPENAI_API_KEY     Required for the default model, unless --slices is given.
@@ -114,15 +97,6 @@ Examples:
   pr-review watch --repo vercel/swr
   pr-review status
   pr-review stop`;
-
-function stdinIsPipe(): boolean {
-  try {
-    const stat = fstatSync(0);
-    return stat.isFIFO() || stat.isSocket();
-  } catch {
-    return false;
-  }
-}
 
 function loadEnvFile(): void {
   for (const candidate of [".env", "../../.env"]) {
@@ -163,22 +137,16 @@ async function main(): Promise<void> {
   const { values, positionals } = parseArgs({
     allowPositionals: true,
     options: {
-      out: { type: "string" },
       repo: { type: "string" },
       slices: { type: "string" },
-      save: { type: "string" },
       wait: { type: "boolean", default: false },
       "max-graphs": { type: "string" },
-      "no-serve": { type: "boolean", default: false },
-      "no-daemon": { type: "boolean", default: false },
       off: { type: "boolean", default: false },
       force: { type: "boolean", default: false },
       interval: { type: "string" },
       foreground: { type: "boolean", default: false },
       port: { type: "string" },
-      concurrency: { type: "string" },
       "debug-marks": { type: "boolean", default: false },
-      "work-dir": { type: "string" },
       model: { type: "string" },
       "no-open": { type: "boolean", default: false },
       quiet: { type: "boolean", default: false },
@@ -189,9 +157,7 @@ async function main(): Promise<void> {
   const log = values.quiet ? () => {} : (m: string) => console.error(m);
   const port = intFlag(values.port, "--port");
   if (port !== undefined && port > 65535) fail("--port must be a port number.");
-  const concurrency = intFlag(values.concurrency, "--concurrency", 1);
   const maxGraphs = intFlag(values["max-graphs"], "--max-graphs");
-  const workDir = values["work-dir"];
 
   const [command] = positionals;
   if (values.help || (!command && !values.slices)) {
@@ -283,7 +249,6 @@ async function main(): Promise<void> {
   if (command === "serve") {
     const server = await runDaemon({
       ...(port !== undefined ? { port } : {}),
-      ...(concurrency !== undefined ? { concurrency } : {}),
       onProgress: log,
     });
     log(`Serving ${server.url} — press Ctrl-C to stop.`);
@@ -390,37 +355,13 @@ async function main(): Promise<void> {
     }
   }
 
-  // --out builds locally: the static copy comes from this process's own
-  // build, so it cannot ride along with a daemon that builds elsewhere.
-  const local = values["no-daemon"] || values["no-serve"] || values.out !== undefined;
-  if (values["no-serve"] && !values.out) {
-    fail("--no-serve needs --out: there would be nothing to show.");
-  }
-  if (local && targets.length > 1) {
-    fail(`--${values["no-daemon"] ? "no-daemon" : "out"} handles one PR; give one target.`);
-  }
-
   const addOptions: AddOptions = {
     // The daemon runs elsewhere; only absolute paths mean the same thing there.
     ...(values.slices ? { slicesFile: path.resolve(values.slices) } : {}),
-    ...(values.save ? { save: path.resolve(values.save) } : {}),
     ...(values.model ? { model: values.model } : {}),
     ...(maxGraphs !== undefined ? { maxGraphs } : {}),
     ...(values["debug-marks"] ? { debugMarks: true } : {}),
-    ...(workDir ? { workDir: path.resolve(workDir) } : {}),
   };
-
-  if (local) {
-    await runLocal(targets[0]!, addOptions, {
-      out: values.out,
-      noServe: values["no-serve"],
-      port,
-      noOpen: values["no-open"],
-      quiet: values.quiet,
-      log,
-    });
-    return;
-  }
 
   const { url: serverUrl, started, serverVersion, missingGithubToken } = await ensureServer();
   log(started ? `Started the server at ${serverUrl} (log: ${logFile()}).` : `Using the server at ${serverUrl}.`);
@@ -476,88 +417,6 @@ async function main(): Promise<void> {
     }
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
-}
-
-interface LocalOptions {
-  out: string | undefined;
-  noServe: boolean;
-  port: number | undefined;
-  noOpen: boolean;
-  quiet: boolean;
-  log: (message: string) => void;
-}
-
-/**
- * The pre-daemon path, kept for two uses: a static copy (--out/--no-serve),
- * and a single-PR foreground server (--no-daemon) that dies with the
- * terminal instead of outliving it.
- */
-async function runLocal(
-  target: PrRef,
-  options: AddOptions,
-  cli: LocalOptions,
-): Promise<void> {
-  const { log } = cli;
-  let reportFile: string;
-  if (options.slicesFile) {
-    reportFile = options.slicesFile;
-    log(`Using slices from ${reportFile}`);
-  } else {
-    const report = await slicePr({
-      prUrl: prUrl(target),
-      ...(options.workDir ? { workDir: options.workDir } : {}),
-      ...(options.model ? { model: options.model } : {}),
-      ...(cli.quiet ? {} : { onProgress: log }),
-    });
-    reportFile = writeSliceReport(report, options.save ?? defaultOutFile(report));
-    log(`Slices written to ${reportFile}`);
-  }
-
-  const { input, headDir } = await explorerInputFromReport(reportFile, {
-    ...(options.workDir ? { workDir: options.workDir } : {}),
-    ...(options.maxGraphs !== undefined ? { maxGraphs: options.maxGraphs } : {}),
-    ...(options.debugMarks ? { debugMarks: true } : {}),
-    ...(cli.quiet ? {} : { onProgress: log }),
-  });
-
-  const withGraphs = input.slices.filter((s) => s.graph).length;
-  log(`${input.slices.length} slices, ${withGraphs} with a walkable call graph.`);
-
-  // A static copy reads fine on its own; only symbol clicks need a server,
-  // so it is rendered without a navBase — nothing to ask.
-  if (cli.out) {
-    writeFileSync(cli.out, renderSliceExplorerHtml(input), "utf8");
-    log(`Static copy written to ${cli.out}`);
-  }
-  if (cli.noServe) {
-    console.log(cli.out);
-    return;
-  }
-
-  const server = await serveExplorer({
-    headDir,
-    input,
-    ...(cli.port !== undefined ? { port: cli.port } : {}),
-    ...(cli.quiet ? {} : { onProgress: log }),
-  });
-  log(`Serving ${server.pageUrl} — press Ctrl-C to stop.`);
-  console.log(server.pageUrl);
-  if (!cli.noOpen) execFile("open", [server.pageUrl], () => {});
-
-  const stop = (): void => {
-    void server.close().then(() => process.exit(0));
-  };
-  process.once("SIGINT", stop);
-  process.once("SIGTERM", stop);
-  // Started by another program over a pipe rather than from a terminal: go
-  // when it does. (Not for a stdin that is simply /dev/null — that ends at
-  // once and says nothing about anyone leaving.)
-  if (stdinIsPipe()) {
-    process.stdin.once("end", stop);
-    process.stdin.resume();
-  }
-  await server.closed;
-  process.exit(0);
 }
 
 main().catch((error: unknown) => {

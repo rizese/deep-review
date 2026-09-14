@@ -1,13 +1,8 @@
 export { parsePrTarget, parsePrUrl, prUrl, type PrRef } from "./prUrl.js";
 export {
   fetchPrInfo,
-  listAssignedPrs,
   listWatchedPrs,
-  assignedPrsQuery,
-  authoredPrsQuery,
   namesRepo,
-  DEFAULT_REVIEW_QUERY,
-  DEFAULT_AUTHORED_QUERY,
   type PrInfo,
   type PrRole,
   type AssignedPr,
@@ -20,11 +15,7 @@ export {
   hunksForFileRange,
   changedPaths,
 } from "./diff.js";
-export {
-  prepareCheckouts,
-  defaultWorkDir,
-  type Checkouts,
-} from "./git.js";
+export { prepareCheckouts, type Checkouts } from "./git.js";
 export {
   extractIssueIdentifiers,
   fetchLinearIssues,

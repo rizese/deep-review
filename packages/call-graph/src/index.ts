@@ -1,21 +1,12 @@
 export {
-  analyzePrCallGraph,
   analyzePrCallPath,
   embedHeadFiles,
   type AnalyzeOptions,
   type PathOptions,
 } from "./analyze.js";
-export {
-  createCallGraphReport,
-  createCallPathReport,
-  type PathReportOptions,
-  type Report,
-  type ReportOptions,
-} from "./report.js";
-export { renderCallGraphHtml, renderCallGraphColumnsHtml, CSS as REPORT_CSS } from "./html.js";
+export { CSS as REPORT_CSS } from "./html.js";
 export { escapeHtml } from "./highlight.js";
 export { CHROME_CSS, CHROME_JS, THEME_HEAD_JS, renderChrome, type ChromeOptions } from "./chrome.js";
-export { renderCallPathExplorerHtml } from "./explorer.js";
 export {
   NavSession,
   type DefinitionAnswer,

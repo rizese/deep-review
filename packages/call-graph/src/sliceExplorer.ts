@@ -6,7 +6,6 @@ import { CHROME_CSS, CHROME_JS, renderChrome, THEME_HEAD_JS } from "./chrome.js"
 import { renderMarkdown } from "./markdown.js";
 import { buildFileIndex, CSS, GAP_JS, renderDataBlob, SCOPE_JS, WRAP_JS, type FileIndex } from "./html.js";
 
-export { fileBlockRanges } from "./diffView.js";
 import type { CallPathResult, EmbeddedFile, FileDiff } from "./types.js";
 
 /** Mirrors the slicer's `FragmentKind`; see the note on SliceFragmentInput. */

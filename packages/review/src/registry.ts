@@ -148,12 +148,9 @@ export interface BuiltPr {
 export interface AddOptions {
   /** Reuse a saved slice JSON instead of paying for a fresh slicing run. */
   slicesFile?: string | undefined;
-  /** Also write this run's slice JSON here. */
-  save?: string | undefined;
   model?: string | undefined;
   maxGraphs?: number | undefined;
   debugMarks?: boolean | undefined;
-  workDir?: string | undefined;
 }
 
 /**

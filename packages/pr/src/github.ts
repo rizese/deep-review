@@ -28,27 +28,57 @@ interface PrApiResponse {
   head: { ref: string; sha: string };
 }
 
+interface GithubRequest {
+  method?: string;
+  body?: string;
+  headers?: Record<string, string>;
+  /**
+   * The error to fail with when no token is available. Set it only where a
+   * token is genuinely required: the REST endpoints below read public repos
+   * unauthenticated, and the GraphQL one cannot be called at all.
+   */
+  tokenRequired?: string;
+  /**
+   * The message for a non-2xx response, given its status and whether a token
+   * was sent. The caller knows what it asked GitHub for, so it words the
+   * failure; this knows how the asking is done.
+   */
+  failed: (status: number, authenticated: boolean) => string;
+}
+
+/**
+ * One call to GitHub. Owns the two names its token goes by, the headers
+ * every endpoint wants, and the turn from a non-2xx response into an Error,
+ * so the callers below are left holding only their own question.
+ */
+async function githubFetch(url: string, request: GithubRequest): Promise<unknown> {
+  const token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
+  if (!token && request.tokenRequired) throw new Error(request.tokenRequired);
+  const res = await fetch(url, {
+    ...(request.method !== undefined ? { method: request.method } : {}),
+    ...(request.body !== undefined ? { body: request.body } : {}),
+    headers: {
+      Accept: "application/vnd.github+json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...request.headers,
+    },
+  });
+  if (!res.ok) throw new Error(request.failed(res.status, Boolean(token)));
+  return res.json();
+}
+
 /** Fetch PR metadata. Uses GITHUB_TOKEN / GH_TOKEN when set (needed for private repos). */
 export async function fetchPrInfo(ref: PrRef): Promise<PrInfo> {
-  const token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
-  const res = await fetch(
+  const pr = (await githubFetch(
     `https://api.github.com/repos/${ref.owner}/${ref.repo}/pulls/${ref.number}`,
     {
-      headers: {
-        Accept: "application/vnd.github+json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-    },
-  );
-  if (!res.ok) {
-    throw new Error(
-      `GitHub API returned ${res.status} for ${ref.owner}/${ref.repo}#${ref.number}` +
-        (res.status === 404 && !token
+      failed: (status, authenticated) =>
+        `GitHub API returned ${status} for ${ref.owner}/${ref.repo}#${ref.number}` +
+        (status === 404 && !authenticated
           ? " (private repo? set GITHUB_TOKEN)"
           : ""),
-    );
-  }
-  const pr = (await res.json()) as PrApiResponse;
+    },
+  )) as PrApiResponse;
   return {
     ...ref,
     title: pr.title,
@@ -239,22 +269,14 @@ function fromNode(node: SearchNode, role: PrRole): AssignedPr | null {
  * without one. Requires a repo, too; see `AssignedPrQuery`.
  */
 export async function listWatchedPrs(options: WatchedPrQuery): Promise<AssignedPr[]> {
-  const token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
-  if (!token) throw new Error("GITHUB_TOKEN is not set; it is needed to find your PRs.");
   const variables = { review: assignedPrsQuery(options), authored: authoredPrsQuery(options) };
-  const res = await fetch("https://api.github.com/graphql", {
+  const body = (await githubFetch("https://api.github.com/graphql", {
     method: "POST",
-    headers: {
-      Accept: "application/vnd.github+json",
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ query: SEARCH_QUERY, variables }),
-  });
-  if (!res.ok) {
-    throw new Error(`GitHub search returned ${res.status}`);
-  }
-  const body = (await res.json()) as SearchGraphResponse;
+    tokenRequired: "GITHUB_TOKEN is not set; it is needed to find your PRs.",
+    failed: (status) => `GitHub search returned ${status}`,
+  })) as SearchGraphResponse;
   if (body.errors?.length) {
     throw new Error(`GitHub search: ${body.errors.map((e) => e.message).join("; ")}`);
   }
@@ -270,9 +292,4 @@ export async function listWatchedPrs(options: WatchedPrQuery): Promise<AssignedP
     }
   }
   return [...byKey.values()];
-}
-
-/** The review list alone; see `listWatchedPrs`. */
-export async function listAssignedPrs(options: AssignedPrQuery): Promise<AssignedPr[]> {
-  return (await listWatchedPrs(options)).filter((pr) => pr.role === "review");
 }

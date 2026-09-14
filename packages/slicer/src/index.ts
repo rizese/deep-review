@@ -1,34 +1,17 @@
 export {
   slicePr,
-  prepare,
-  buildSlicePrompt,
   loadRenderEntry,
   loadSliceReport,
   writeSliceReport,
   defaultOutFile,
+  type RenderEntry,
   type SliceOptions,
 } from "./slice.js";
-export { renderSliceReportsHtml, type RenderEntry } from "./html.js";
-export { buildPrompt, buildRepairPrompt } from "./prompt.js";
 export {
-  runSliceAgent,
   DEFAULT_MODEL,
   apiKeyEnvVars,
   hasApiKeyForModel,
-  type SliceAgentOptions,
   type ReasoningEffort,
 } from "./agent.js";
-export {
-  indexDiff,
-  renderAnnotatedDiff,
-  type DiffIndex,
-  type IndexedHunk,
-} from "./annotate.js";
-export { validateSlices, type ValidationResult } from "./validate.js";
-export {
-  agentOutputSchema,
-  agentSliceSchema,
-  agentFragmentSchema,
-  type AgentOutput,
-} from "./schema.js";
+export { indexDiff, type DiffIndex, type IndexedHunk } from "./annotate.js";
 export type * from "./types.js";

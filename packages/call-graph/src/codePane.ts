@@ -40,11 +40,11 @@ export interface CodePaneInput {
 
 const MARKDOWN_FILE = /\.mdx?$/i;
 
-/** "packages/x/retry.ts" → dimmed directory, bold basename. */
 /** The fold caret at the head of every scope bar: points down open, right folded (CSS rotates it). */
 export const SCOPE_CARET =
   '<span class="scope-caret" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></svg></span>';
 
+/** "packages/x/retry.ts" → dimmed directory, bold basename. */
 function pathHtml(file: string): string {
   const cut = file.lastIndexOf("/") + 1;
   return `${cut > 0 ? `<span class="dir">${esc(file.slice(0, cut))}</span>` : ""}<span class="name">${esc(file.slice(cut))}</span>`;

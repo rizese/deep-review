@@ -11,7 +11,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -91,7 +91,7 @@ export async function findServer(): Promise<string | null> {
  * minutes — long enough for `/health` to time out. A dead probe with a live
  * pid means busy, not gone; only both dead means gone.
  */
-function pidAlive(pid: number): boolean {
+export function pidAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
@@ -161,7 +161,7 @@ function reportHeadSha(file: string): string | null {
  */
 const daemonBuild: BuildPr = async ({ prUrl, navBase, options }, log) => {
   const ref = parsePrUrl(prUrl);
-  const workDir = options.workDir ?? defaultDaemonWorkDir(ref);
+  const workDir = defaultDaemonWorkDir(ref);
   mkdirSync(workDir, { recursive: true });
 
   let reportFile: string;
@@ -185,8 +185,6 @@ const daemonBuild: BuildPr = async ({ prUrl, navBase, options }, log) => {
       reportFile = writeSliceReport(report, cached);
       log(`slices written to ${reportFile}`);
     }
-    // --save means "leave me the slice JSON" however the run was answered.
-    if (options.save) copyFileSync(reportFile, options.save);
   }
 
   const built = await explorerInputFromReport(reportFile, {

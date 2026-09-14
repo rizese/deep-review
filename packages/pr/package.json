@@ -9,14 +9,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm --clean",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
-  },
-  "devDependencies": {
-    "@types/node": "^22.13.0",
-    "tsup": "^8.3.6",
-    "typescript": "^5.7.3",
-    "vitest": "^3.0.5"
   }
 }

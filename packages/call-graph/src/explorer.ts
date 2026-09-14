@@ -2,14 +2,7 @@ import { renderCodePane } from "./codePane.js";
 import { fileDiffRows, markIntraLine, segmentRows, type DiffRow } from "./diffView.js";
 import { escapeHtml as esc, languageOf, type Mark } from "./highlight.js";
 import {
-  buildFileIndex,
-  dataScripts,
-  GAP_JS,
-  pageHead,
-  pageHeader,
   presenceBadge,
-  SCOPE_JS,
-  WRAP_JS,
   type Decorations,
   type FileEntry,
   type FileIndex,
@@ -29,18 +22,6 @@ function sitesFor(side: "before" | "after", edge: { before: CallSite[]; after: C
 
 /** Lines of surrounding file context shown around a function, like `diff -U10`. */
 const PANEL_CONTEXT = 10;
-
-/**
- * The head-side lines a panel shows for a declaration spanning
- * `startLine..endLine` in a file of `lineCount` lines: the declaration
- * padded with context on both sides.
- */
-export function panelRange(
-  span: { startLine: number; endLine: number },
-  lineCount: number,
-): [number, number] {
-  return [Math.max(1, span.startLine - PANEL_CONTEXT), Math.min(lineCount, span.endLine + PANEL_CONTEXT)];
-}
 
 /** Panel id of a definition: a graph node keeps its own; anything else is `def:<id>`. */
 export function definitionPanelId(def: DefinitionTarget): string {
@@ -910,43 +891,3 @@ function initExplorer(root, NAMES, onNavigate) {
   updateRails();
 }
 `;
-
-export function renderCallPathExplorerHtml(result: CallPathResult): string {
-  const index = buildFileIndex(result.files);
-  const root = result.nodes.find((n) => n.id === result.rootId);
-  if (!root) throw new Error("root node missing from call graph");
-
-  const panels = result.nodes.map((n) => renderPanel(n, result, index)).join("\n");
-  const rootPanel = renderPanel(root, result, index);
-  const names = Object.fromEntries(result.nodes.map((n) => [n.id, n.name]));
-
-  return `<!doctype html>
-<html lang="en">
-<head>
-${pageHead(result, EXPLORER_CSS)}
-</head>
-<body class="explorer">
-${pageHeader(result)}
-<p class="missing">tap a highlighted call to walk down the stack; tap a "called by" row to walk up</p>
-
-<div class="viewport" data-root="${esc(result.rootId)}">
-  <button class="rail rail-left"></button>
-  <button class="rail rail-right"></button>
-  <div class="track">${rootPanel}</div>
-</div>
-
-<div id="panel-defs" class="panel-defs" hidden>${panels}</div>
-
-<script type="application/json" id="node-names">${JSON.stringify(names).replaceAll("</", "<\\/")}</script>
-${dataScripts(result, index)}
-<script>
-${GAP_JS}
-${WRAP_JS}
-${SCOPE_JS}
-${EXPLORER_NAV_JS}
-initExplorer(document.body, JSON.parse(document.getElementById("node-names").textContent));
-</script>
-</body>
-</html>
-`;
-}

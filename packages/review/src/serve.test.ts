@@ -1,9 +1,9 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { SliceExplorerInput } from "@deep-review/call-graph";
+import { renderSliceExplorerHtml, type SliceExplorerInput } from "@deep-review/call-graph";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { serveExplorer, startNavServer, type NavServer } from "./serve.js";
+import { startNavServer, type NavServer } from "./serve.js";
 
 // A two-file TS project as the head checkout; the slice changes use.ts.
 const headDir = mkdtempSync(path.join(os.tmpdir(), "serve-test-"));
@@ -47,9 +47,25 @@ const input: SliceExplorerInput = {
   ],
 };
 
+/** A server holding this one already-built PR, rendered where the server mounts it. */
+async function serveOne(): Promise<NavServer & { pageUrl: string }> {
+  const [owner = "unknown", repo = "unknown"] = input.repo.split("/");
+  const ref = { owner, repo, number: input.number };
+  const server = await startNavServer({
+    build: ({ navBase }) => {
+      const mounted = { ...input, navBase };
+      return Promise.resolve({ input: mounted, headDir, html: renderSliceExplorerHtml(mounted) });
+    },
+    sessionGraceMs: 60,
+  });
+  server.add(ref);
+  await server.registry.settled();
+  return { ...server, pageUrl: server.urlFor(ref) };
+}
+
 let server: NavServer & { pageUrl: string };
 beforeAll(async () => {
-  server = await serveExplorer({ headDir, input, sessionGraceMs: 60 });
+  server = await serveOne();
 });
 afterAll(async () => {
   await server.close();
@@ -61,7 +77,7 @@ const get = (route: string) => fetch(new URL(route.replace(/^\//, ""), server.pa
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const json = async (route: string): Promise<any> => (await get(route)).json();
 
-describe("serveExplorer", () => {
+describe("navigation server", () => {
   it("mounts the PR under its own prefix and serves the page uncached", async () => {
     expect(server.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/$/);
     expect(server.pageUrl).toBe(`${server.url}pr/a/b/1/`);

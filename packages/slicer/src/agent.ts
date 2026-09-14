@@ -212,32 +212,33 @@ export async function runSliceAgent(
   }
   report(`Prompt is ~${estimatedTokens.toLocaleString()} tokens.`);
 
-  let result = await timedGenerate({ prompt });
-  let output = result.output;
+  let output = (await timedGenerate({ prompt })).output;
   report(`Agent proposed ${output.slices.length} slices.`);
 
+  // Validate, then spend the repair budget handing the errors back. The loop
+  // condition carries both the budget and the outcome, so the result it
+  // leaves behind is the one decision made below — success or exhaustion.
   const maxRepairs = options.maxRepairs ?? DEFAULT_REPAIRS;
-  for (let attempt = 0; attempt <= maxRepairs; attempt++) {
-    const validation = validateSlices(output, index);
-    if (validation.ok) {
-      return { overview: output.overview, slices: validation.slices, model: modelId, llmMs };
-    }
-    if (attempt === maxRepairs) {
-      throw new Error(
-        [
-          `The agent's slices still did not partition the diff after ${maxRepairs} repair attempts:`,
-          ...validation.errors.map((e) => `  - ${e}`),
-        ].join("\n"),
-      );
-    }
+  let validation = validateSlices(output, index);
+  for (let attempt = 0; !validation.ok && attempt < maxRepairs; attempt++) {
     report(
       `Slices did not partition the diff (${validation.errors.length} problems); asking for a repair.`,
     );
-    result = await timedGenerate({
-      prompt: `${prompt}\n\n---\n\n${buildRepairPrompt(output, validation.errors)}`,
-    });
-    output = result.output;
+    output = (
+      await timedGenerate({
+        prompt: `${prompt}\n\n---\n\n${buildRepairPrompt(output, validation.errors)}`,
+      })
+    ).output;
+    validation = validateSlices(output, index);
   }
 
-  throw new Error("unreachable");
+  if (!validation.ok) {
+    throw new Error(
+      [
+        `The agent's slices still did not partition the diff after ${maxRepairs} repair attempts:`,
+        ...validation.errors.map((e) => `  - ${e}`),
+      ].join("\n"),
+    );
+  }
+  return { overview: output.overview, slices: validation.slices, model: modelId, llmMs };
 }

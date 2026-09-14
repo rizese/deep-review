@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { SCOPE_CARET } from "./codePane.js";
-import { fileBlockRanges, renderSliceExplorerHtml, type SliceInput } from "./sliceExplorer.js";
+import { fileBlockRanges } from "./diffView.js";
+import { renderSliceExplorerHtml, type SliceInput } from "./sliceExplorer.js";
 import type { CallPathResult, FunctionSnapshot, PathNode } from "./types.js";
 
 function snapshot(file: string, lines: string[]): FunctionSnapshot {
