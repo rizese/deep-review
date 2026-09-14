@@ -1,3 +1,10 @@
+import {
+  BuildError,
+  ConfigError,
+  type DeepReviewError,
+  InputError,
+  TransientError,
+} from "./errors.js";
 import type { PrRef } from "./prUrl.js";
 
 export interface PrInfo extends PrRef {
@@ -47,13 +54,66 @@ interface GithubRequest {
 }
 
 /**
+ * How long GitHub asked us to wait, in milliseconds, or undefined when it
+ * said nothing. `Retry-After` is in seconds from now; `x-ratelimit-reset` is
+ * the epoch second the quota refills at, which is the header a plain rate
+ * limit comes with.
+ */
+function retryAfterMs(headers: Headers): number | undefined {
+  const retryAfter = Number(headers.get("retry-after")?.trim());
+  if (Number.isFinite(retryAfter) && retryAfter >= 0) return Math.round(retryAfter * 1000);
+  const reset = Number(headers.get("x-ratelimit-reset")?.trim());
+  if (Number.isFinite(reset)) return Math.max(0, Math.round(reset * 1000 - Date.now()));
+  return undefined;
+}
+
+/**
+ * A non-2xx response as the kind of failure it is. A 404 is the interesting
+ * one: unauthenticated it usually means the repo is private and this machine
+ * cannot see it (config), while with a token in hand it means the PR really
+ * is not there (input).
+ */
+function httpFailure(
+  message: string,
+  status: number,
+  authenticated: boolean,
+  headers: Headers,
+): DeepReviewError {
+  if (status === 401 || status === 403) return new ConfigError(message);
+  if (status === 404) return authenticated ? new InputError(message) : new ConfigError(message);
+  if (status === 429) return new TransientError(message, { retryAfterMs: retryAfterMs(headers) });
+  if (status >= 500) return new TransientError(message);
+  return new InputError(message);
+}
+
+/**
+ * A GraphQL `errors` array as the kind of failure it is. GraphQL answers 200
+ * whatever went wrong, so the only evidence is the messages themselves: a
+ * rate limit is worth retrying, a rejected token is not, and anything else is
+ * a query we got wrong.
+ */
+function graphqlFailure(
+  message: string,
+  errors: { message: string; type?: string }[],
+): DeepReviewError {
+  const text = errors.map((e) => `${e.type ?? ""} ${e.message}`).join("; ");
+  if (text.includes("RATE_LIMITED") || /rate limit/i.test(text)) return new TransientError(message);
+  if (/Bad credentials|Resource not accessible/.test(text)) return new ConfigError(message);
+  return new BuildError(message);
+}
+
+/**
  * One call to GitHub. Owns the two names its token goes by, the headers
  * every endpoint wants, and the turn from a non-2xx response into an Error,
  * so the callers below are left holding only their own question.
+ *
+ * A failure of the fetch itself is deliberately not caught: node throws a
+ * `TypeError` carrying the undici code, which `failureKindOf` reads as the
+ * transient network failure it is, and wrapping it would only bury that.
  */
 async function githubFetch(url: string, request: GithubRequest): Promise<unknown> {
   const token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
-  if (!token && request.tokenRequired) throw new Error(request.tokenRequired);
+  if (!token && request.tokenRequired) throw new ConfigError(request.tokenRequired);
   const res = await fetch(url, {
     ...(request.method !== undefined ? { method: request.method } : {}),
     ...(request.body !== undefined ? { body: request.body } : {}),
@@ -63,7 +123,14 @@ async function githubFetch(url: string, request: GithubRequest): Promise<unknown
       ...request.headers,
     },
   });
-  if (!res.ok) throw new Error(request.failed(res.status, Boolean(token)));
+  if (!res.ok) {
+    throw httpFailure(
+      request.failed(res.status, Boolean(token)),
+      res.status,
+      Boolean(token),
+      res.headers,
+    );
+  }
   return res.json();
 }
 
@@ -185,7 +252,7 @@ export function authoredPrsQuery(options: WatchedPrQuery): string {
 function scopedQuery(repo: string, query: string): string {
   const clauses = query.trim();
   if (namesRepo(clauses)) {
-    throw new Error(
+    throw new ConfigError(
       `The query for ${repo} names a repo itself (${JSON.stringify(clauses)}); ` +
         "the repo comes from the entry, so leave repo: out of it.",
     );
@@ -208,7 +275,7 @@ interface SearchNode {
 
 interface SearchGraphResponse {
   data?: { review?: { nodes: SearchNode[] }; authored?: { nodes: SearchNode[] } };
-  errors?: { message: string }[];
+  errors?: { message: string; type?: string }[];
 }
 
 /**
@@ -278,7 +345,10 @@ export async function listWatchedPrs(options: WatchedPrQuery): Promise<AssignedP
     failed: (status) => `GitHub search returned ${status}`,
   })) as SearchGraphResponse;
   if (body.errors?.length) {
-    throw new Error(`GitHub search: ${body.errors.map((e) => e.message).join("; ")}`);
+    throw graphqlFailure(
+      `GitHub search: ${body.errors.map((e) => e.message).join("; ")}`,
+      body.errors,
+    );
   }
   const byKey = new Map<string, AssignedPr>();
   // Review hits first, authored second, so a PR in both ends up as yours.

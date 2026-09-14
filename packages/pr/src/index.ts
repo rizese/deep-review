@@ -15,7 +15,13 @@ export {
   hunksForFileRange,
   changedPaths,
 } from "./diff.js";
-export { prepareCheckouts, type Checkouts } from "./git.js";
+export {
+  prepareCheckouts,
+  releaseCheckouts,
+  removeRepoWorkDir,
+  repoWorkRoot,
+  type Checkouts,
+} from "./git.js";
 export {
   extractIssueIdentifiers,
   fetchLinearIssues,
@@ -23,3 +29,13 @@ export {
   type LinearIssue,
 } from "./linear.js";
 export type { DiffHunk, FileDiff } from "./types.js";
+export {
+  DeepReviewError,
+  TransientError,
+  ConfigError,
+  InputError,
+  BuildError,
+  failureKindOf,
+  describeError,
+  type FailureKind,
+} from "./errors.js";

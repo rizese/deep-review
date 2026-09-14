@@ -1,3 +1,11 @@
+import {
+  BuildError,
+  ConfigError,
+  type DeepReviewError,
+  InputError,
+  TransientError,
+} from "./errors.js";
+
 const LINEAR_API = "https://api.linear.app/graphql";
 
 /** `linear.app/<org>/issue/ENG-123/...` — the unambiguous form. */
@@ -93,6 +101,18 @@ interface IssueQueryResponse {
   errors?: { message: string }[];
 }
 
+/**
+ * Linear's failures are classified like GitHub's: a rejected key is setup, a
+ * rate limit or a dead server is worth retrying, and anything else is this
+ * request. A 404 cannot happen here — GraphQL answers 200 for an issue that
+ * does not exist, and `fetchIssue` reads that as "not a ticket".
+ */
+function httpFailure(message: string, status: number): DeepReviewError {
+  if (status === 401 || status === 403) return new ConfigError(message);
+  if (status === 429 || status >= 500) return new TransientError(message);
+  return new InputError(message);
+}
+
 async function fetchIssue(identifier: string): Promise<LinearIssue | null> {
   const [team, number] = identifier.split("-");
   const res = await fetch(LINEAR_API, {
@@ -107,13 +127,17 @@ async function fetchIssue(identifier: string): Promise<LinearIssue | null> {
     }),
   });
   if (!res.ok) {
-    throw new Error(`Linear API returned ${res.status} for ${identifier}`);
+    throw httpFailure(`Linear API returned ${res.status} for ${identifier}`, res.status);
   }
   const payload = (await res.json()) as IssueQueryResponse;
   if (payload.errors?.length) {
-    throw new Error(
-      `Linear API error for ${identifier}: ${payload.errors.map((e) => e.message).join("; ")}`,
-    );
+    const text = payload.errors.map((e) => e.message).join("; ");
+    const message = `Linear API error for ${identifier}: ${text}`;
+    if (/rate limit/i.test(text)) throw new TransientError(message);
+    if (/authentication|not authenticated|invalid api key/i.test(text)) {
+      throw new ConfigError(message);
+    }
+    throw new BuildError(message);
   }
   const node = payload.data?.issues.nodes[0];
   if (!node) return null;

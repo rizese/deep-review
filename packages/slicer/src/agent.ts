@@ -1,6 +1,7 @@
 import { anthropic } from "@ai-sdk/anthropic";
 import { openai } from "@ai-sdk/openai";
 import { createXai } from "@ai-sdk/xai";
+import { BuildError, ConfigError, InputError } from "@deep-review/pr";
 import { isStepCount, Output, ToolLoopAgent } from "ai";
 import type { DiffIndex } from "./annotate.js";
 import { buildPrompt, buildRepairPrompt } from "./prompt.js";
@@ -140,6 +141,15 @@ export async function runSliceAgent(
   options: SliceAgentOptions = {},
 ): Promise<{ overview: string; slices: Slice[]; model: string; llmMs: number }> {
   const modelId = options.model ?? process.env.DEEP_REVIEW_MODEL ?? DEFAULT_MODEL;
+  // Asked before the call rather than left to the provider: the AI SDK's
+  // missing-key error carries no status and no retry verdict, so it would be
+  // classified as a pipeline failure and retried against the same empty
+  // environment. This says what to set, once.
+  if (!hasApiKeyForModel(modelId)) {
+    throw new ConfigError(
+      `No API key for ${modelId}: set ${apiKeyEnvVars(modelId).join(" or ")}.`,
+    );
+  }
   const report = options.onProgress ?? (() => {});
   const { model, providerOptions } = resolveModel(modelId, options.effort ?? DEFAULT_EFFORT);
   let llmMs = 0;
@@ -159,6 +169,12 @@ export async function runSliceAgent(
   // Streamed (rather than a single blocking generate() call) so long real-world
   // runs show live progress — reasoning and tool-call activity — instead of
   // going dark for the whole call.
+  //
+  // Provider failures are left exactly as the AI SDK threw them: an
+  // `APICallError` already carries `statusCode` and `isRetryable`, which is
+  // precisely what `failureKindOf` reads, so wrapping one could only lose
+  // information. The one failure that carries neither — a missing API key —
+  // is caught above, before the call.
   const timedGenerate = async (args: { prompt: string }): Promise<{ output: AgentOutput }> => {
     const start = performance.now();
     let step = 0;
@@ -203,7 +219,7 @@ export async function runSliceAgent(
   const prompt = buildPrompt(context, index);
   const estimatedTokens = Math.ceil(prompt.length / 4);
   if (estimatedTokens > MAX_PROMPT_TOKENS) {
-    throw new Error(
+    throw new InputError(
       `The diff is too large to slice in one pass: ~${estimatedTokens.toLocaleString()} tokens of prompt ` +
         `(${index.changedLineCount.toLocaleString()} changed lines across ${index.hunks.length} hunks) ` +
         `against a ceiling of ${MAX_PROMPT_TOKENS.toLocaleString()}. ` +
@@ -233,7 +249,7 @@ export async function runSliceAgent(
   }
 
   if (!validation.ok) {
-    throw new Error(
+    throw new BuildError(
       [
         `The agent's slices still did not partition the diff after ${maxRepairs} repair attempts:`,
         ...validation.errors.map((e) => `  - ${e}`),

@@ -3,6 +3,7 @@ import {
   extractIssueIdentifiers,
   fetchLinearIssues,
   fetchPrInfo,
+  InputError,
   isLinearConfigured,
   parsePrUrl,
   parseUnifiedDiff,
@@ -98,7 +99,7 @@ async function prepare(
 
   const index = indexDiff(parseUnifiedDiff(context.diffText));
   if (index.changedLineCount === 0) {
-    throw new Error("The PR's diff has no changed lines.");
+    throw new InputError("The PR's diff has no changed lines.");
   }
   report(
     `Diff: ${index.hunks.length} hunks, ${index.changedLineCount} changed lines.`,
@@ -145,7 +146,7 @@ export function loadSliceReport(reportFile: string): SliceReport {
     JSON.parse(readFileSync(reportFile, "utf8")),
   );
   if (!parsed.success) {
-    throw new Error(
+    throw new InputError(
       `${reportFile} is not a slice report: ${parsed.error.issues
         .map((i) => `${i.path.join(".")} ${i.message}`)
         .join("; ")}`,

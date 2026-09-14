@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ConfigError, InputError } from "./errors.js";
 import { parsePrTarget, parsePrUrl, prUrl } from "./prUrl.js";
 
 describe("parsePrUrl", () => {
@@ -19,6 +20,9 @@ describe("parsePrUrl", () => {
       /Not a GitHub PR URL/,
     );
     expect(() => parsePrUrl("https://gitlab.com/a/b/pull/7")).toThrow();
+    // The target itself is what is wrong here: nothing about this machine
+    // would make that URL parse.
+    expect(() => parsePrUrl("https://github.com/a/b/issues/7")).toThrow(InputError);
   });
 });
 
@@ -42,10 +46,13 @@ describe("parsePrTarget", () => {
 
   it("rejects a bare number with no repo", () => {
     expect(() => parsePrTarget("10511")).toThrow(/needs a repo/);
+    // Setup, not input: the number is fine, the repo it needs was never set.
+    expect(() => parsePrTarget("10511")).toThrow(ConfigError);
   });
 
   it("rejects a malformed default repo", () => {
     expect(() => parsePrTarget("10511", "spara-app")).toThrow(/owner>\/<repo/);
+    expect(() => parsePrTarget("10511", "spara-app")).toThrow(ConfigError);
   });
 });
 
