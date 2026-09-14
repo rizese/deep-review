@@ -41,7 +41,12 @@ export interface SeenPr {
   /** The PR's `updated_at` when we dispatched it; shown, not compared. */
   updatedAt: string;
   dispatchedAt: number;
+  /** When GitHub last confirmed this PR still open, for a PR that has left the query. */
+  checkedAt?: number | undefined;
 }
+
+/** How long a "still open" answer is trusted before a held PR is asked about again. */
+export const RECHECK_MS = 30 * 60_000;
 
 export interface WatcherState {
   /**
@@ -160,18 +165,27 @@ export interface PrLifecycle {
  * A check that fails proves nothing either way, so the PR stays held and is
  * asked about again next poll; the worst case is a page that outlives its PR
  * by one GitHub hiccup, which is nothing against removing one still open.
+ *
+ * A "still open" answer is remembered for `recheckMs` (half an hour). An
+ * approved PR that stays open for a week used to be asked about every five
+ * minutes, forever; now it is asked twice an hour, and a page outlives its
+ * merged PR by at most that long.
  */
 export async function planCleanup(
   held: Record<PrKey, SeenPr>,
   assigned: AssignedPr[],
   check: (ref: PrRef) => Promise<PrLifecycle>,
   log: (message: string) => void = () => {},
+  options: { now?: number | undefined; recheckMs?: number | undefined } = {},
 ): Promise<{ finished: PrKey[]; held: Record<PrKey, SeenPr> }> {
+  const now = options.now ?? Date.now();
+  const recheckMs = options.recheckMs ?? RECHECK_MS;
   const inQuery = new Set(assigned.map(prKey));
   const finished: PrKey[] = [];
   const kept: Record<PrKey, SeenPr> = { ...held };
-  for (const key of Object.keys(held)) {
+  for (const [key, record] of Object.entries(held)) {
     if (inQuery.has(key)) continue;
+    if (record.checkedAt !== undefined && now - record.checkedAt < recheckMs) continue;
     const ref = parsePrKey(key);
     if (!ref) {
       // A key we cannot ask GitHub about cannot be confirmed finished.
@@ -183,6 +197,8 @@ export async function planCleanup(
         finished.push(key);
         delete kept[key];
         log(`${key}: ${pr.merged ? "merged" : "closed"}.`);
+      } else {
+        kept[key] = { ...record, checkedAt: now };
       }
     } catch (error) {
       log(`${key}: could not check — ${error instanceof Error ? error.message : String(error)}`);

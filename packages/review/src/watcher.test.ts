@@ -315,6 +315,29 @@ describe("planCleanup", () => {
     expect(asked.map((ref) => ref.number)).toEqual([2]);
   });
 
+  it("asks about a still-open PR again only after a while, not every poll", async () => {
+    // Approved-but-open PRs sit outside the query for days; asking GitHub
+    // about each of them every five minutes was the watcher's biggest cost.
+    const asked: number[] = [];
+    const check = async (ref: PrRef) => {
+      asked.push(ref.number);
+      return OPEN;
+    };
+    const t0 = 1_000_000;
+    const first = await planCleanup({ "acme/widgets#1": heldPr() }, [], check, () => {}, { now: t0, recheckMs: 600 });
+    expect(asked).toEqual([1]);
+    expect(first.held["acme/widgets#1"]!.checkedAt).toBe(t0);
+    // Too soon: not asked. Late enough: asked, and the time moves on.
+    await planCleanup(first.held, [], check, () => {}, { now: t0 + 500, recheckMs: 600 });
+    expect(asked).toEqual([1]);
+    const third = await planCleanup(first.held, [], check, () => {}, { now: t0 + 700, recheckMs: 600 });
+    expect(asked).toEqual([1, 1]);
+    expect(third.held["acme/widgets#1"]!.checkedAt).toBe(t0 + 700);
+    // Once it is merged, the wait does not save it.
+    const done = await planCleanup(third.held, [], async () => MERGED, () => {}, { now: t0 + 100_000, recheckMs: 600 });
+    expect(done.finished).toEqual(["acme/widgets#1"]);
+  });
+
   it("keeps a PR whose check failed, and finishes the others", async () => {
     // A failed check proves nothing either way; the safe reading is "still
     // open", and the next poll asks again.
