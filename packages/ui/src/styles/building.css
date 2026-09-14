@@ -1,0 +1,12 @@
+/* The placeholder a PR's own URL shows while it is still building: the
+   column, the header, and the live build log. The values are the ones the
+   server-rendered page used (REPORT_CSS and INDEX_CSS); every rule is kept
+   under `.building-page`, since `.page` and `.hint` are names the explorer
+   uses too. */
+.building-page .page { max-width: 44rem; margin: 0 auto; padding: 0 1rem 4rem; }
+.building-page header h1 { margin: 0 0 0.2rem; font-size: 1.3rem; }
+.building-page .hint { margin-top: 1.5rem; color: var(--ink-soft); font-size: 0.85rem; }
+.building-page .hint code { font-family: var(--mono); color: var(--ink); }
+.building-page .log { margin-top: 1rem; padding: 0.9rem; border: 1px solid var(--line-c);
+                      border-radius: 8px; background: var(--panel); font-family: var(--mono);
+                      font-size: 0.8rem; white-space: pre-wrap; color: var(--ink-soft); }

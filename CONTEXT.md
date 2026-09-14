@@ -140,10 +140,13 @@ needs them is retired.
 **Client app**:
 The React + Vite app in `packages/ui` that renders the pages in the browser
 from the server's JSON (`/prs`, `/events`, `/prs/<key>/input`). The server
-serves its build (`packages/ui/dist`) at `/` when present, and its own
-rendered pages otherwise (or when `DEEP_REVIEW_UI=classic`). Styles are CSS
-modules over one token file; the visual baselines under `e2e/` are the
-acceptance test that a page ported to it looks as it did.
+serves its build (`packages/ui/dist`) at `/` and at every PR's own prefix
+when present, and its own rendered pages otherwise (or when
+`DEEP_REVIEW_UI=classic`); a PR's symbol routes are the server's either way.
+Styles are CSS modules over one token file, except where a class name is
+itself the contract — the source lines and panels the analysis package
+renders as HTML keep their global names. The visual baselines under `e2e/`
+are the acceptance test that a page ported to it looks as it did.
 _Avoid_: frontend, web app (the deleted `apps/web` scaffold was called that)
 
 **Chrome**:

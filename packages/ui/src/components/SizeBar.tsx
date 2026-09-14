@@ -1,5 +1,5 @@
 import type { JSX } from "react";
-import type { SizeBreakdown } from "@deep-review/call-graph";
+import type { SizeBreakdown } from "../lib/callGraph.js";
 import styles from "./SizeBar.module.css";
 
 const KINDS = ["core", "test", "boilerplate"] as const;

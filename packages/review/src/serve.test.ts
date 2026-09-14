@@ -48,7 +48,7 @@ const input: SliceExplorerInput = {
 };
 
 /** A server holding this one already-built PR, rendered where the server mounts it. */
-async function serveOne(): Promise<NavServer & { pageUrl: string }> {
+async function serveOne(options: { uiDir?: string } = {}): Promise<NavServer & { pageUrl: string }> {
   const [owner = "unknown", repo = "unknown"] = input.repo.split("/");
   const ref = { owner, repo, number: input.number };
   const server = await startNavServer({
@@ -57,6 +57,7 @@ async function serveOne(): Promise<NavServer & { pageUrl: string }> {
       return Promise.resolve({ input: mounted, headDir, html: renderSliceExplorerHtml(mounted) });
     },
     sessionGraceMs: 60,
+    ...options,
   });
   server.add(ref);
   await server.registry.settled();
@@ -155,6 +156,29 @@ describe("navigation server", () => {
     }
     // This suite's server has no build: the rendered index, as before.
     expect(await (await fetch(server.url)).text()).toContain('class="rows"');
+  });
+
+  it("serves a held PR's page from the client app when a build is present", async () => {
+    const uiDir = mkdtempSync(path.join(os.tmpdir(), "ui-dist-"));
+    writeFileSync(path.join(uiDir, "index.html"), "<!doctype html><title>Deep Review</title><div id=root></div>");
+    const withApp = await serveOne({ uiDir });
+    try {
+      // The app renders the explorer and the building placeholder itself,
+      // from the registry's stream and this PR's input.
+      const page = await fetch(withApp.pageUrl);
+      expect(page.status).toBe(200);
+      expect(await page.text()).toContain("<div id=root>");
+      // Its questions about symbols are still the server's to answer.
+      const where = new URL("definition?file=use.ts&line=4&col=9", withApp.pageUrl);
+      expect((await fetch(where)).status).toBe(200);
+      // A PR this server does not hold is still the 404 page, not the app.
+      const absent = await fetch(new URL("/pr/a/b/9/", withApp.url));
+      expect(absent.status).toBe(404);
+      expect(await absent.text()).toContain("is not loaded on this server");
+    } finally {
+      await withApp.close();
+      rmSync(uiDir, { recursive: true, force: true });
+    }
   });
 
   it("serves a ready PR's input as JSON, and says when there is none", async () => {

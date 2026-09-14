@@ -456,6 +456,15 @@ export async function startNavServer(options: NavServerOptions): Promise<NavServ
         return;
       }
       if (route.rest === "/") {
+        // With a client build here, a PR's page is that app: it reads the
+        // registry's stream and this PR's input and renders both the
+        // explorer and the placeholder itself. Every question below this
+        // line is still answered the same way.
+        const page = app.index();
+        if (page) {
+          sendHtml(res, 200, page);
+          return;
+        }
         const html = registry.html(route.key);
         if (html) {
           registry.pageAlive(route.key);

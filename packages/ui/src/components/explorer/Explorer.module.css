@@ -1,0 +1,5 @@
+/* The two places SLICE_CSS put a margin on a size bar. The bar itself is
+   the SizeBar component, so the rules travel with it rather than with the
+   explorer's global sheet. */
+.badgeDelta { margin-right: 0.3rem; }
+.sideDelta { margin-top: 0.55rem; }
