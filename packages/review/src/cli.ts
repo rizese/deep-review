@@ -24,7 +24,7 @@ import {
   uninstallAgent,
   watcherLogFile,
 } from "./launchAgent.js";
-import type { AddOptions, PrRef, PrView } from "./registry.js";
+import { humanDelay, parkedNote, type AddOptions, type PrRef, type PrView } from "./registry.js";
 import { VERSION } from "./serve.js";
 import {
   addWatchedRepo,
@@ -166,7 +166,7 @@ async function main(): Promise<void> {
   }
 
   if (command === "watch") {
-    const intervalMs = intFlag(values.interval, "--interval", 30);
+    const intervalSeconds = intFlag(values.interval, "--interval", 30);
     const running = readWatcherState().runner;
 
     if (values.off) {
@@ -207,10 +207,10 @@ async function main(): Promise<void> {
       // the same emptiness, and each poll says what it is not watching.
       log(
         `Watching PRs waiting on your review, and the ones you opened, ${scope}, ` +
-          `every ${intervalMs ?? DEFAULT_INTERVAL_MS / 1000}s.`,
+          `every ${intervalSeconds ?? DEFAULT_INTERVAL_MS / 1000}s.`,
       );
       await runWatcher({
-        ...(intervalMs !== undefined ? { intervalMs: intervalMs * 1000 } : {}),
+        ...(intervalSeconds !== undefined ? { intervalMs: intervalSeconds * 1000 } : {}),
         onProgress: log,
       });
       return;
@@ -232,12 +232,12 @@ async function main(): Promise<void> {
     }
 
     const result = installAgent({
-      ...(intervalMs !== undefined ? { intervalMs: intervalMs * 1000 } : {}),
+      ...(intervalSeconds !== undefined ? { intervalMs: intervalSeconds * 1000 } : {}),
       ...(values.force ? { force: true } : {}),
     });
     log(
       `Watching PRs waiting on your review, and the ones you opened, ${scope}, ` +
-        `every ${intervalMs ?? DEFAULT_INTERVAL_MS / 1000}s.\n` +
+        `every ${intervalSeconds ?? DEFAULT_INTERVAL_MS / 1000}s.\n` +
         `Edit ${watchConfigFile()} to change which repos, or their queries; it is read on every check.\n` +
         `Reviews appear at the server's index as they build; pr-review status shows both.\n` +
         `Carried into the background: ${result.captured.join(", ")}.\n` +
@@ -316,10 +316,16 @@ async function main(): Promise<void> {
     const prs = await listServerPrs(url);
     log(`Serving ${url} — ${prs.length} PR${prs.length === 1 ? "" : "s"}.`);
     for (const pr of prs) {
+      const failure = pr.failure
+        ? pr.failure.nextRetryAt !== undefined && !pr.failure.parked
+          ? `${pr.failure.kind}; retrying in ${humanDelay(pr.failure.nextRetryAt - Date.now())}`
+          : `${pr.failure.kind}; ${parkedNote(pr.failure.kind)}`
+        : "";
       const note = [
         pr.state === "ready"
           ? `${pr.slices} slices${pr.live ? ", live" : ""}`
           : (pr.error ?? pr.log[pr.log.length - 1] ?? ""),
+        failure,
         pr.role === "authored" ? "yours" : "",
         pr.approved ? "approved" : "",
       ]
