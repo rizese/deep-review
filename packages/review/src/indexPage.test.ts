@@ -10,6 +10,9 @@ function view(overrides: Partial<PrView> = {}): PrView {
     key: "a/b#1",
     prUrl: "https://github.com/a/b/pull/1",
     state: "ready",
+    role: "review",
+    approved: false,
+    approvers: [],
     path: "/pr/a/b/1/",
     title: "A PR",
     slices: 2,
@@ -70,5 +73,65 @@ describe("renderIndexPage", () => {
       "0",
     );
     expect(empty).not.toContain('class="delta"');
+  });
+});
+
+describe("renderIndexPage tabs and approval", () => {
+  it("offers a tab per role, counted, and a box to hide approved PRs", () => {
+    const html = renderIndexPage(
+      [view(), view({ key: "a/b#2", number: 2, role: "authored" }), view({ key: "a/b#3", number: 3, role: "authored" })],
+      "0",
+    );
+    expect(html).toContain('data-tab="review" aria-selected="true">For review<span class="count">1</span>');
+    expect(html).toContain('data-tab="authored" aria-selected="false">My PRs<span class="count">2</span>');
+    expect(html).toContain('<input type="checkbox" id="hide-approved"> Hide approved PRs');
+  });
+
+  it("marks every row with its role and approval, so the page can filter without asking the server", () => {
+    const html = renderIndexPage(
+      [
+        view({ approved: true, approvers: ["alex", "sam"] }),
+        view({ key: "a/b#2", number: 2, role: "authored", draft: true, author: "me" }),
+      ],
+      "0",
+    );
+    expect(html).toContain('data-key="a/b#1" data-path="/pr/a/b/1/" data-role="review" data-approved="true"');
+    expect(html).toContain('<span class="pill approved" title="approved by alex, sam">approved</span>');
+    expect(html).toContain('data-key="a/b#2" data-path="/pr/a/b/1/" data-role="authored" data-approved="false"');
+    expect(html).toContain('<span class="pill draft">draft</span>');
+    expect(html).toContain('<div class="name">a/b#2 · me</div>');
+  });
+
+  it("lets the page hide a row, despite the row's own display", () => {
+    // `.row` is a grid, and an author display beats the browser's [hidden]
+    // rule — so without this, every tab showed every PR.
+    expect(renderIndexPage([view()], "0")).toContain(".row[hidden] { display: none; }");
+  });
+
+  it("makes the whole card the way into the PR, and keeps GitHub to one icon", () => {
+    const html = renderIndexPage([view(), view({ key: "a/b#2", number: 2, state: "building", path: "/pr/a/b/2/" })], "0");
+    // The card carries its path for the click handler; the title links there in every state.
+    expect(html).toContain('data-key="a/b#1" data-path="/pr/a/b/1/"');
+    expect(html).toContain('data-key="a/b#2" data-path="/pr/a/b/2/"');
+    expect(html).toContain('<a class="title" href="/pr/a/b/2/">');
+    // The key is text, not a link out; GitHub is the icon in the action row.
+    expect(html).toContain('<div class="name">a/b#1</div>');
+    expect(html).not.toContain('<a href="https://github.com/a/b/pull/1">');
+    expect(html).toContain('<a class="gh" href="https://github.com/a/b/pull/1" target="_blank" rel="noopener" title="Open on GitHub"');
+    expect(html).toContain("e.target.closest(\"a, button, input, label\")");
+  });
+
+  it("sits in the shared chrome, with the count and the way home", () => {
+    const html = renderIndexPage([view(), view({ key: "a/b#2", number: 2 })], "0");
+    expect(html).toContain('<nav class="chrome"');
+    expect(html).toContain('<a class="glass brand" href="/"');
+    expect(html).toContain('<span class="count" title="PRs on this server">2</span>');
+    expect(html).not.toContain("<h1>Deep Review</h1>");
+  });
+
+  it("renders a PR that predates roles as one for review, not approved", () => {
+    const html = renderIndexPage([view()], "0");
+    expect(html).toContain('data-role="review" data-approved="false"');
+    expect(html).not.toContain('class="pill approved"');
   });
 });

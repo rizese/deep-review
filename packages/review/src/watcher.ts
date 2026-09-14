@@ -20,9 +20,16 @@
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { fetchPrInfo, listAssignedPrs, type AssignedPr, type PrRef } from "@deep-review/pr";
-import { addPrToServer, ensureServer, findServer, removePrFromServer, stateDir } from "./daemon.js";
-import { prKey, type AddOptions, type PrKey, type PrView } from "./registry.js";
+import { fetchPrInfo, listWatchedPrs, type AssignedPr, type PrRef } from "@deep-review/pr";
+import {
+  addPrToServer,
+  ensureServer,
+  findServer,
+  removePrFromServer,
+  stateDir,
+  updatePrFacts,
+} from "./daemon.js";
+import { prKey, type AddOptions, type PrFacts, type PrKey, type PrView } from "./registry.js";
 import { readWatchConfig, watchConfigFile, type WatchedRepo } from "./watchConfig.js";
 
 export function watcherStateFile(): string {
@@ -121,6 +128,17 @@ export function planPoll(
   return { dispatch, seen: kept };
 }
 
+/** What the server should know about a PR the search just reported. */
+export function factsOf(pr: AssignedPr): PrFacts {
+  return {
+    role: pr.role,
+    approved: pr.approved,
+    approvers: pr.approvers,
+    author: pr.author,
+    draft: pr.draft,
+  };
+}
+
 const PR_KEY = /^([^/]+)\/([^#]+)#(\d+)$/;
 
 /** The `owner/repo#number` key back into a ref; null for a key not of that shape. */
@@ -182,11 +200,17 @@ export async function planCleanup(
 
 export interface PollDeps {
   /**
-   * The PRs waiting on you right now in one configured repo. Called once per
-   * repo in `watch.json`, and for no other: a repo the file does not name is
-   * never asked about.
+   * The PRs that concern you right now in one configured repo: waiting on
+   * your review, and opened by you. Called once per repo in `watch.json`,
+   * and for no other: a repo the file does not name is never asked about.
    */
   list?: ((repo: WatchedRepo) => Promise<AssignedPr[]>) | undefined;
+  /**
+   * Refresh what the server knows about a PR it already holds — approval,
+   * above all, which changes after the page is built. Defaults to asking a
+   * *running* server only; one that is not up holds nothing to refresh.
+   */
+  update?: ((key: PrKey, facts: PrFacts) => Promise<boolean>) | undefined;
   /** The current state of one PR, for the merged-or-closed check. */
   check?: ((ref: PrRef) => Promise<PrLifecycle>) | undefined;
   /**
@@ -195,8 +219,8 @@ export interface PollDeps {
    * be work for no one.
    */
   remove?: ((key: PrKey) => Promise<boolean>) | undefined;
-  /** Hand one PR to the server. Defaults to starting/finding it and adding. */
-  add?: ((pr: AssignedPr, options: AddOptions) => Promise<PrView>) | undefined;
+  /** Hand one PR to the server. Defaults to starting/finding it and adding, facts included. */
+  add?: ((pr: AssignedPr, options: AddOptions, facts: PrFacts) => Promise<PrView>) | undefined;
   options?: AddOptions | undefined;
   onProgress?: ((message: string) => void) | undefined;
 }
@@ -220,7 +244,9 @@ export interface PollDeps {
 export async function pollOnce(deps: PollDeps = {}): Promise<WatcherState> {
   const log = deps.onProgress ?? (() => {});
   const list =
-    deps.list ?? ((repo: WatchedRepo) => listAssignedPrs({ repo: repo.repo, query: repo.query }));
+    deps.list ??
+    ((repo: WatchedRepo) =>
+      listWatchedPrs({ repo: repo.repo, query: repo.query, authoredQuery: repo.authoredQuery }));
   const before = readWatcherState();
 
   const config = readWatchConfig();
@@ -249,8 +275,10 @@ export async function pollOnce(deps: PollDeps = {}): Promise<WatcherState> {
   const { dispatch, seen } = planPoll(assigned, before.seen);
   if (config.repos.length > 0) {
     const repos = config.repos.length;
+    const waiting = assigned.filter((pr) => pr.role !== "authored").length;
+    const mine = assigned.length - waiting;
     log(
-      `${assigned.length} PR${assigned.length === 1 ? "" : "s"} waiting ` +
+      `${waiting} PR${waiting === 1 ? "" : "s"} waiting on you and ${mine} of yours ` +
         `across ${repos} repo${repos === 1 ? "" : "s"}; ${dispatch.length} new.`,
     );
   }
@@ -262,12 +290,13 @@ export async function pollOnce(deps: PollDeps = {}): Promise<WatcherState> {
   const options: AddOptions = { ...deps.options };
   const add =
     deps.add ??
-    (async (pr: AssignedPr, addOptions: AddOptions): Promise<PrView> => {
+    (async (pr: AssignedPr, addOptions: AddOptions, facts: PrFacts): Promise<PrView> => {
       const { url } = await ensureServer();
       return addPrToServer(
         url,
         { owner: pr.owner, repo: pr.repo, number: pr.number },
         addOptions,
+        facts,
       );
     });
 
@@ -276,14 +305,31 @@ export async function pollOnce(deps: PollDeps = {}): Promise<WatcherState> {
   for (const pr of dispatch) {
     const key = prKey(pr);
     try {
-      const view = await add(pr, options);
+      const view = await add(pr, options, factsOf(pr));
       held[key] = dispatched[key]!;
-      log(`${key}: ${view.state}.`);
+      log(`${key}: ${view.state}${pr.role === "authored" ? " (yours)" : ""}.`);
     } catch (error) {
       // Forget it, so the next poll tries again rather than losing the PR
       // to a server that happened to be down for this one minute.
       delete dispatched[key];
       log(`${key}: could not hand over — ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  // The PRs already handed over are not re-added — that would rebuild on
+  // every push — but what GitHub says about them is passed along, so an
+  // approval that landed since shows on the index without a new build. Only
+  // a running server is told; one that is down holds nothing to tell.
+  const newlyDispatched = new Set(dispatch.map(prKey));
+  const refresh = assigned.filter((pr) => !newlyDispatched.has(prKey(pr)));
+  if (refresh.length > 0) {
+    const update = deps.update ?? (await serverUpdater());
+    for (const pr of refresh) {
+      try {
+        await update(prKey(pr), factsOf(pr));
+      } catch (error) {
+        log(`${prKey(pr)}: could not refresh — ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
   }
 
@@ -316,6 +362,13 @@ export async function pollOnce(deps: PollDeps = {}): Promise<WatcherState> {
   };
   writeWatcherState(state);
   return state;
+}
+
+/** Facts go to the server that is up, or nowhere: never start one to tell it about approvals. */
+async function serverUpdater(): Promise<(key: PrKey, facts: PrFacts) => Promise<boolean>> {
+  const url = await findServer();
+  if (!url) return async () => false;
+  return (key, facts) => updatePrFacts(url, key, facts);
 }
 
 export interface RunWatcherOptions {

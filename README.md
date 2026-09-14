@@ -41,7 +41,14 @@ That both adds the repo to `~/.deep-review/watch.json` and turns watching on, in
 
 One long-lived local server holds every PR you add. The first invocation
 starts it, later ones add their PRs to it, and each PR keeps its own URL until
-the server is stopped. A PR builds in the background — its URL opens at once
+the server is stopped. The server listens on port 7331 when it is free (set
+`DEEP_REVIEW_PORT` to prefer another), so the index stays at one address
+across restarts and a bookmark to it keeps working.
+
+Every page sits in the same frame: a bar along the top with the Deep Review
+wordmark, which leads back to the index from anywhere, a pill with the number
+of PRs the server holds and a `+` that adds one by URL, and a light / system
+/ dark switch. The theme is remembered by the browser. A PR builds in the background — its URL opens at once
 and turns into the explorer when it is ready.
 
 ```sh
@@ -116,7 +123,13 @@ Request/response shapes live in `packages/shared/src/index.ts`.
 ## Watching your assigned PRs
 
 `pr-review watch` turns the whole thing around: instead of asking for a
-review, a review is waiting when a PR is assigned to you.
+review, a review is waiting when a PR is assigned to you. It follows the PRs
+you open, too, so the index has two tabs: **For review**, the PRs waiting on
+you, and **My PRs**, the ones you authored. A **Hide approved PRs** box on
+the index hides, on either tab, every PR that already carries an approval;
+the watcher refreshes approvals on each check, so a PR approved after its
+page was built disappears from the filtered list on its own. Both the tab and
+the box are remembered by the browser.
 
 ```sh
 pr-review watch          # on; survives logout, reboot and a closed lid
@@ -137,18 +150,22 @@ Which repos it watches is the business of one file, `~/.deep-review/watch.json`
 {
   "repos": {
     "acme/widgets": {},
-    "acme/gadgets": { "query": "is:open is:pr review-requested:@me -is:draft" }
+    "acme/gadgets": {
+      "query": "is:open is:pr review-requested:@me -is:draft",
+      "authoredQuery": "is:open is:pr author:@me -is:draft"
+    }
   }
 }
 ```
 
 Each key is a repo to watch, and naming it is all opting in takes: an empty
-entry uses the default query below. An entry may instead carry its own
+entry uses the default queries below. An entry may instead carry its own
 `query`, in GitHub search syntax, for a repo where "waiting on me" is spelled
-differently. Leave `repo:` out of it — the repo is the key, and is appended for
-you, so no entry's query can reach into a repo other than the one it is filed
-under; one that tries is skipped with a note in the log. The file is read on
-every check, so adding a repo needs no reinstall.
+differently, and its own `authoredQuery` for what counts as one of yours.
+Leave `repo:` out of both — the repo is the key, and is appended for you, so
+no entry's query can reach into a repo other than the one it is filed under;
+one that tries is skipped with a note in the log. The file is read on every
+check, so adding a repo needs no reinstall.
 
 A repo not named in the file is never watched. Not queried, not touched, not
 on the server: there is no default that means "every repo your token can see",
@@ -157,23 +174,36 @@ none, means nothing is watched, and each check says so in the log.
 `DEEP_REVIEW_REPO` still names the repo a bare PR number refers to; it plays
 no part in what is watched.
 
-"Waiting on your review" is narrower than "assigned to you", and deliberately:
-a draft is not ready to be read, and one you have already approved has been
-read. Both are excluded, so the list is work outstanding rather than
-everything carrying your name. The default query, for each repo, is exactly:
+"Waiting on your review" is narrower than "assigned to you": a draft is not
+ready to be read, so drafts are excluded. Approved PRs are not — GitHub's
+`review:approved` means approved by *anyone*, so filtering on it would hide a
+PR one colleague has approved while your review is still requested. They come
+through marked approved instead, for the index's box to hide. The default
+review query, for each repo, is exactly:
 
 ```
-is:open is:pr assignee:@me archived:false -is:draft -review:approved repo:<owner>/<repo>
+is:open is:pr assignee:@me archived:false -is:draft repo:<owner>/<repo>
 ```
+
+and the default authored query, drafts included since a draft of yours is
+still yours:
+
+```
+is:open is:pr author:@me archived:false repo:<owner>/<repo>
+```
+
+A PR in both lists — one you opened and assigned to yourself — is yours, and
+appears once, under My PRs.
 
 The check asks for the *current* set of such PRs rather than for events,
 which is what makes a laptop the right place to run it: a webhook delivered to
 a sleeping machine is lost, but one poll after the lid opens sees everything
 that happened overnight. Missing a check costs nothing by construction.
 
-A PR is handed over once, when it first appears in that list — not every time
-it changes, because `updated_at` moves on every comment and a rebuild means a
-paid slicing run. Anything that drops out of the list is forgotten, so
+A PR is handed over once, when it first appears in either list — not every
+time it changes, because `updated_at` moves on every comment and a rebuild
+means a paid slicing run. What GitHub says about a PR already handed over —
+its approval, above all — is passed along on every check without a rebuild. Anything that drops out of the list is forgotten, so
 approving a PR and having it reassigned, or unassigning and reassigning, is
 the deliberate way to ask for it again.
 

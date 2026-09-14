@@ -132,6 +132,27 @@ already here (after a restart, the kept slice JSON — no model call), while
 a moved head drops the stale build and remakes it. The daemon's clones and
 worktrees live under the state dir (`work/`), not the tmp dir macOS purges.
 
+**Chrome**:
+The frame every page sits in: the pool — a light-blue (or, at night, deep-blue)
+grainy gradient behind everything — and one full-width glass bar along the
+top carrying the wordmark (the way home), the server's PR count with a `+`
+that adds a PR by URL, and the light / system / dark switch. Rendered by
+`renderChrome` in `packages/call-graph/src/chrome.ts`, included by the slice
+explorer, the index and the building page; a static `--out` copy gets the
+wordmark alone, unlinked. Theme choice is `data-theme` on the root, stamped
+before first paint from localStorage; "system" is its absence.
+_Avoid_: header (the explorer's sidebar and the report pages have headers of
+their own), navbar
+
+**PR facts**:
+What is known about a held PR from GitHub rather than from its build: its
+role — `review` (waiting on you, the default) or `authored` (you opened it),
+which picks the index tab it sits on — and whether it is approved, by whom.
+Set when the PR is added, refreshed by the watcher on every check (`PATCH
+/prs/<key>`), kept in the state file beside the build, and never a reason to
+rebuild. The index's "Hide approved PRs" box reads them client-side.
+_Avoid_: metadata (too broad; the slicer's report has metadata of its own)
+
 **Lockfile**:
 `~/.deep-review/server.json` (override: $DEEP_REVIEW_HOME) — the running
 server's claim to exist: pid, port, URL. The claim is only believed after

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { SCOPE_CARET } from "./codePane.js";
 import {
   buildFileIndex,
   fileLineHtml,
@@ -261,7 +262,7 @@ describe("renderCallGraphColumnsHtml", () => {
   it("puts a scope header over the target's code", () => {
     // The target is not in an embedded file: path only, nothing to follow.
     expect(html).toContain(
-      '<div class="scope-bar"><span class="scope-path"><span class="dir">src/</span><span class="name">x.ts</span></span><span class="scope-sym"></span></div>',
+      `<div class="scope-bar" aria-expanded="true">${SCOPE_CARET}<span class="scope-path"><span class="dir">src/</span><span class="name">x.ts</span></span><span class="scope-sym"></span></div>`,
     );
   });
 

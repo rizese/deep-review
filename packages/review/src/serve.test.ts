@@ -97,6 +97,26 @@ describe("serveExplorer", () => {
     expect(prs.map((p: { key: string; state: string }) => [p.key, p.state])).toEqual([["a/b#1", "ready"]]);
   });
 
+  it("takes what GitHub says about a held PR over PATCH /prs/:key, and shows it on the index", async () => {
+    const patch = (key: string, facts: unknown) =>
+      fetch(new URL(`/prs/${encodeURIComponent(key)}`, server.url), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(facts),
+      });
+    const res = await patch("a/b#1", { approved: true, approvers: ["alex"], role: "authored" });
+    expect(res.status).toBe(200);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { pr }: any = await res.json();
+    expect(pr).toMatchObject({ key: "a/b#1", state: "ready", approved: true, approvers: ["alex"], role: "authored" });
+    const index = await (await fetch(server.url)).text();
+    expect(index).toContain('data-role="authored" data-approved="true"');
+    expect(index).toContain('title="approved by alex">approved</span>');
+    expect((await patch("a/b#2", { approved: true })).status).toBe(404);
+    // Back the way the other tests expect it.
+    expect((await patch("a/b#1", { approved: false, approvers: [], role: "review" })).status).toBe(200);
+  });
+
   it("answers /definition with a stable id and the panel to open", async () => {
     const first = await json("/definition?file=use.ts&line=4&col=9");
     const second = await json("/definition?file=use.ts&line=4&col=9");

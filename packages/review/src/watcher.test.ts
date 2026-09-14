@@ -26,6 +26,10 @@ function assigned(number: number, updatedAt = "2026-09-01T10:00:00Z"): AssignedP
     htmlUrl: `https://github.com/acme/widgets/pull/${number}`,
     updatedAt,
     draft: false,
+    role: "review",
+    author: "someone",
+    approved: false,
+    approvers: [],
   };
 }
 
@@ -48,6 +52,9 @@ function view(pr: AssignedPr): PrView {
     prUrl: pr.htmlUrl,
     key: `${pr.owner}/${pr.repo}#${pr.number}`,
     state: "queued",
+    role: pr.role,
+    approved: pr.approved,
+    approvers: pr.approvers,
     path: `/pr/${pr.owner}/${pr.repo}/${pr.number}/`,
     addedAt: Date.now(),
     log: [],
@@ -113,6 +120,49 @@ describe("pollOnce", () => {
     expect(handed).toEqual([1, 2]);
     expect(Object.keys(state.seen)).toHaveLength(2);
     expect(readWatcherState().seen).toEqual(state.seen);
+  });
+
+  it("hands a PR over with what GitHub said about it: its role and approval", async () => {
+    const facts: unknown[] = [];
+    await pollOnce({
+      list: async () => [
+        { ...assigned(1), role: "authored", author: "me", draft: true },
+        { ...assigned(2), approved: true, approvers: ["alex"] },
+      ],
+      add: async (pr, _options, given) => {
+        facts.push(given);
+        return view(pr);
+      },
+    });
+    expect(facts).toEqual([
+      { role: "authored", approved: false, approvers: [], author: "me", draft: true },
+      { role: "review", approved: true, approvers: ["alex"], author: "someone", draft: false },
+    ]);
+  });
+
+  it("refreshes what the server knows about PRs it already holds, without handing them over again", async () => {
+    // An approval lands after the page is built, and the page should say so
+    // — but a re-add would rebuild on every push, so the facts go separately.
+    const handed: number[] = [];
+    const refreshed: [string, unknown][] = [];
+    const deps = {
+      list: async () => [assigned(1)],
+      add: async (pr: AssignedPr) => {
+        handed.push(pr.number);
+        return view(pr);
+      },
+      update: async (key: string, facts: unknown) => {
+        refreshed.push([key, facts]);
+        return true;
+      },
+    };
+    await pollOnce(deps);
+    expect(refreshed).toEqual([]);
+    await pollOnce({ ...deps, list: async () => [{ ...assigned(1), approved: true, approvers: ["alex"] }] });
+    expect(handed).toEqual([1]);
+    expect(refreshed).toEqual([
+      ["acme/widgets#1", { role: "review", approved: true, approvers: ["alex"], author: "someone", draft: false }],
+    ]);
   });
 
   it("does not hand the same PR over twice across polls", async () => {

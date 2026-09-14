@@ -14,6 +14,7 @@ export {
 } from "./report.js";
 export { renderCallGraphHtml, renderCallGraphColumnsHtml, CSS as REPORT_CSS } from "./html.js";
 export { escapeHtml } from "./highlight.js";
+export { CHROME_CSS, CHROME_JS, THEME_HEAD_JS, renderChrome, type ChromeOptions } from "./chrome.js";
 export { renderCallPathExplorerHtml } from "./explorer.js";
 export {
   NavSession,

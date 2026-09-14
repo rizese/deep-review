@@ -2,12 +2,17 @@ export { parsePrTarget, parsePrUrl, prUrl, type PrRef } from "./prUrl.js";
 export {
   fetchPrInfo,
   listAssignedPrs,
+  listWatchedPrs,
   assignedPrsQuery,
+  authoredPrsQuery,
   namesRepo,
   DEFAULT_REVIEW_QUERY,
+  DEFAULT_AUTHORED_QUERY,
   type PrInfo,
+  type PrRole,
   type AssignedPr,
   type AssignedPrQuery,
+  type WatchedPrQuery,
 } from "./github.js";
 export {
   parseUnifiedDiff,

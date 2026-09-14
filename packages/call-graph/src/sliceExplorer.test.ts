@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { SCOPE_CARET } from "./codePane.js";
 import { fileBlockRanges, renderSliceExplorerHtml, type SliceInput } from "./sliceExplorer.js";
 import type { CallPathResult, FunctionSnapshot, PathNode } from "./types.js";
 
@@ -231,7 +232,7 @@ describe("renderSliceExplorerHtml", () => {
 
   it("heads the pane with the same sticky scope bar every panel uses, plus the file's +/− count", () => {
     const panel = /<article class="panel slice-panel"[\s\S]*?<\/article>/.exec(html)![0];
-    expect(panel).toContain('<div class="scope-bar" data-key="after:a.ts"><span class="scope-path"><span class="name">a.ts</span></span>');
+    expect(panel).toContain(`<div class="scope-bar" data-key="after:a.ts" aria-expanded="true">${SCOPE_CARET}<span class="scope-path"><span class="name">a.ts</span></span>`);
     // Line 1 is the first visible line, inside Box.
     expect(panel).toContain('<span class="scope-sym">Box</span>');
     expect(panel).toContain('<span class="stat"><span class="plus">+3</span><span class="minus">−1</span></span>');

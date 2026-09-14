@@ -19,7 +19,7 @@ import { renderSliceExplorerHtml } from "@deep-review/call-graph";
 import { fetchPrInfo, parsePrUrl } from "@deep-review/pr";
 import { loadSliceReport, slicePr, writeSliceReport } from "@deep-review/slicer";
 import { explorerInputFromReport } from "./build.js";
-import type { AddOptions, BuildPr, PrKey, PrRef, PrView } from "./registry.js";
+import type { AddOptions, BuildPr, PrFacts, PrKey, PrRef, PrView } from "./registry.js";
 import { startNavServer, VERSION, type NavServer } from "./serve.js";
 
 export function stateDir(): string {
@@ -204,6 +204,14 @@ const daemonBuild: BuildPr = async ({ prUrl, navBase, options }, log) => {
   };
 };
 
+/** The port the server tries first; `$DEEP_REVIEW_PORT` overrides it, `--port` overrides both. */
+export const DEFAULT_PORT = 7331;
+
+function preferredPort(): number {
+  const env = process.env.DEEP_REVIEW_PORT;
+  return env && /^\d+$/.test(env) ? Number(env) : DEFAULT_PORT;
+}
+
 export interface RunDaemonOptions {
   port?: number | undefined;
   concurrency?: number | undefined;
@@ -221,15 +229,34 @@ export async function runDaemon(options: RunDaemonOptions = {}): Promise<NavServ
   if (existing) {
     throw new Error(`A server is already running at ${existing} (pr-review stop to stop it).`);
   }
-  const server = await startNavServer({
-    build: daemonBuild,
-    // A re-added PR is only trusted while its head has not moved.
-    currentHeadSha: async (ref) => (await fetchPrInfo(ref)).headSha,
-    stateFile: registryFile(),
-    ...(options.port !== undefined ? { port: options.port } : {}),
-    ...(options.concurrency !== undefined ? { concurrency: options.concurrency } : {}),
-    ...(options.onProgress ? { onProgress: options.onProgress } : {}),
-  });
+  const startOn = (port: number): Promise<NavServer> =>
+    startNavServer({
+      build: daemonBuild,
+      // A re-added PR is only trusted while its head has not moved.
+      currentHeadSha: async (ref) => (await fetchPrInfo(ref)).headSha,
+      stateFile: registryFile(),
+      // Pages restored from the state file come back in this version's chrome.
+      rerender: ({ input }) => renderSliceExplorerHtml(input),
+      port,
+      ...(options.concurrency !== undefined ? { concurrency: options.concurrency } : {}),
+      ...(options.onProgress ? { onProgress: options.onProgress } : {}),
+    });
+  let server: NavServer;
+  if (options.port !== undefined) {
+    server = await startOn(options.port);
+  } else {
+    // The same port every time, when it is free: a browser remembers its
+    // theme and tab per origin, and a bookmark to the index should survive
+    // a restart. Taken by something else, any free port will do.
+    const preferred = preferredPort();
+    try {
+      server = await startOn(preferred);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EADDRINUSE") throw error;
+      options.onProgress?.(`port ${preferred} is taken; listening on a free one instead.`);
+      server = await startOn(0);
+    }
+  }
   mkdirSync(stateDir(), { recursive: true });
   const lock: ServerLock = {
     pid: process.pid,
@@ -356,17 +383,34 @@ export async function addPrToServer(
   serverUrl: string,
   ref: PrRef,
   options: AddOptions,
+  facts: PrFacts = {},
 ): Promise<PrView> {
   const response = await fetch(new URL("/prs", serverUrl), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...ref, options }),
+    body: JSON.stringify({ ...ref, options, facts }),
   });
   const body = (await response.json()) as { pr?: PrView; why?: string };
   if (!response.ok || !body.pr) {
     throw new Error(body.why ?? `the server said ${response.status}`);
   }
   return body.pr;
+}
+
+/**
+ * Tell the server what GitHub now says about a PR it holds — approval most
+ * of all. False when the server does not hold it (nothing to update; the
+ * watcher will hand it over if it should).
+ */
+export async function updatePrFacts(serverUrl: string, key: PrKey, facts: PrFacts): Promise<boolean> {
+  const response = await fetch(new URL(`/prs/${encodeURIComponent(key)}`, serverUrl), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(facts),
+  });
+  if (response.status === 404) return false;
+  if (!response.ok) throw new Error(`the server said ${response.status}`);
+  return true;
 }
 
 export async function listServerPrs(serverUrl: string): Promise<PrView[]> {

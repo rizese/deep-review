@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { SCOPE_CARET } from "./codePane.js";
 import { panelRange, renderCallPathExplorerHtml, renderDefinitionPanel } from "./explorer.js";
 import { buildFileIndex } from "./html.js";
 import type { CallPathResult, DefinitionTarget, FunctionSnapshot, PathNode } from "./types.js";
@@ -312,13 +313,13 @@ describe("sticky scope header", () => {
     );
     // The pane opens on the gap over lines 1–9, inside Mod.
     expect(leafPanel).toContain(
-      '<div class="scope-bar" data-key="after:leaf.ts"><span class="scope-path"><span class="name">leaf.ts</span></span><span class="scope-sym">Mod</span>',
+      `<div class="scope-bar" data-key="after:leaf.ts" aria-expanded="true">${SCOPE_CARET}<span class="scope-path"><span class="name">leaf.ts</span></span><span class="scope-sym">Mod</span>`,
     );
   });
 
   it("shows the path alone when the file is not embedded", () => {
     const midPanel = html.slice(html.lastIndexOf('data-node="mid.ts#mid"'), html.lastIndexOf('data-node="leaf.ts#leaf"'));
-    expect(midPanel).toContain('<div class="scope-bar"><span class="scope-path"><span class="name">mid.ts</span></span><span class="scope-sym"></span>');
+    expect(midPanel).toContain(`<div class="scope-bar" aria-expanded="true">${SCOPE_CARET}<span class="scope-path"><span class="name">mid.ts</span></span><span class="scope-sym"></span>`);
   });
 
   it("includes the scroll-following script", () => {

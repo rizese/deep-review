@@ -2,6 +2,7 @@ import { EXPLORER_CSS, EXPLORER_NAV_JS, renderPanel } from "./explorer.js";
 import { renderCodePane } from "./codePane.js";
 import { fragmentDiffRows } from "./diffView.js";
 import { escapeHtml as esc, languageOf } from "./highlight.js";
+import { CHROME_CSS, CHROME_JS, renderChrome, THEME_HEAD_JS } from "./chrome.js";
 import { renderMarkdown } from "./markdown.js";
 import { buildFileIndex, CSS, GAP_JS, renderDataBlob, SCOPE_JS, WRAP_JS, type FileIndex } from "./html.js";
 
@@ -273,12 +274,18 @@ export const SIZE_CSS = `
 `;
 
 const SLICE_CSS = `
+  /* The page is exactly one viewport tall and never scrolls itself: the bar
+     takes its row, and the sidebar and stage share the rest. Anything that
+     overflows scrolls inside its own pane — the sidebar, a panel, the
+     description — never the page. */
   body.slice-explorer {
     max-width: none; margin: 0; padding: 0;
-    display: grid; grid-template-columns: 240px 1fr;
+    height: 100vh; overflow: hidden;
+    display: grid; grid-template-columns: 240px 1fr; grid-template-rows: var(--chrome-h) minmax(0, 1fr);
   }
-  .main { padding: 0.8rem 1rem; min-width: 0; }
-  .stage { position: relative; overflow: hidden; height: calc(100vh - 1.6rem); }
+  body.slice-explorer .chrome { grid-column: 1 / -1; }
+  .main { padding: 0.3rem 1rem 1rem; min-width: 0; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); }
+  .stage { position: relative; overflow: hidden; grid-row: 1; height: 100%; min-height: 0; }
   .deck {
     display: flex; flex-direction: column; height: 100%;
     transform: translateY(calc(var(--slice, 0) * -100%));
@@ -289,9 +296,13 @@ const SLICE_CSS = `
   .slice-view .viewport { height: 100%; }
 
   .side {
-    box-sizing: border-box; height: 100vh; position: sticky; top: 0;
-    border-right: 1px solid var(--line-c); padding: 1.1rem 0.9rem;
+    /* A floating card, cut like the slice panels beside it: same border, same
+       radius, same glass; a margin so it floats on the pool rather than
+       running into the edge. */
+    box-sizing: border-box; min-height: 0; overflow-y: auto; margin: 0.3rem 0 1rem 1rem;
+    border: 1px solid var(--line-c); border-radius: 8px; padding: 1.1rem 0.9rem;
     display: flex; flex-direction: column; gap: 1.2rem;
+    background: var(--panel); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
   }
   .side .pr { font-family: var(--mono); font-size: 0.72rem; color: var(--ink-soft); text-decoration: none; }
   .side .pr:hover { color: var(--accent); }
@@ -376,7 +387,7 @@ const SLICE_CSS = `
      stage and the description never both claim the main column, and the
      highlight follows without any bookkeeping. */
   .doc-link { margin-bottom: 0.9rem; }
-  .doc-view { display: none; height: calc(100vh - 1.6rem); overflow-y: auto; padding-right: 0.8rem; }
+  .doc-view { display: none; grid-row: 1; height: 100%; min-height: 0; overflow-y: auto; padding-right: 0.8rem; }
   body.showing-description .doc-view { display: block; }
   body.showing-description .stage { display: none; }
   body.showing-description .doc-link {
@@ -759,9 +770,11 @@ export function renderSliceExplorerHtml(input: SliceExplorerInput): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(`${input.repo}#${input.number} — slice explorer`)}</title>
-<style>${CSS}${EXPLORER_CSS}${SIZE_CSS}${SLICE_CSS}${input.debugMarks ? DEBUG_MARKS_CSS : ""}</style>
+<style>${CSS}${CHROME_CSS}${EXPLORER_CSS}${SIZE_CSS}${SLICE_CSS}${input.debugMarks ? DEBUG_MARKS_CSS : ""}</style>
+<script>${THEME_HEAD_JS}</script>
 </head>
-<body class="slice-explorer">
+<body class="slice-explorer compact">
+${renderChrome({ home: input.navBase ? "/" : null })}
 <aside class="side">
   <div>
     <a class="pr" href="${esc(input.prUrl)}">${esc(input.repo)}#${input.number}</a>
@@ -804,6 +817,7 @@ ${input.debugMarks ? DEBUG_MARKS_LEGEND : ""}
 <script type="application/json" id="render-data">${renderDataBlob(index)}</script>
 <script>
 window.NAV_BASE = ${JSON.stringify(input.navBase ?? "")};
+${CHROME_JS}
 ${GAP_JS}
 ${WRAP_JS}
 ${SCOPE_JS}

@@ -30,6 +30,11 @@ export interface WatchedRepo {
    * the key, and is appended for you. Absent means the default query.
    */
   query?: string | undefined;
+  /**
+   * The clauses for "my PRs" in this repo — what the index's My PRs tab
+   * shows — under the same rules. Absent means the default authored query.
+   */
+  authoredQuery?: string | undefined;
 }
 
 /**
@@ -37,10 +42,10 @@ export interface WatchedRepo {
  * twice with two different queries, and so the entry with nothing to say
  * about its query is just `{}`: naming a repo is all it takes to watch it.
  *
- *   { "repos": { "acme/widgets": {}, "acme/gadgets": { "query": "..." } } }
+ *   { "repos": { "acme/widgets": {}, "acme/gadgets": { "query": "...", "authoredQuery": "..." } } }
  */
 export interface WatchConfig {
-  repos: Record<string, { query?: string | undefined }>;
+  repos: Record<string, { query?: string | undefined; authoredQuery?: string | undefined }>;
 }
 
 export interface ParsedWatchConfig {
@@ -80,22 +85,26 @@ export function parseWatchConfig(raw: unknown): ParsedWatchConfig {
       problems.push(`${repo}: entry should be an object like {} or { "query": "..." }; skipped.`);
       continue;
     }
-    const query = (entry as { query?: unknown }).query;
-    if (query === undefined) {
-      repos.push({ repo });
-      continue;
+    const watched: WatchedRepo = { repo };
+    let skip = false;
+    for (const field of ["query", "authoredQuery"] as const) {
+      const value = (entry as Record<string, unknown>)[field];
+      if (value === undefined) continue;
+      if (typeof value !== "string" || value.trim() === "") {
+        problems.push(`${repo}: "${field}" should be a non-empty string; skipped.`);
+        skip = true;
+        break;
+      }
+      if (namesRepo(value)) {
+        problems.push(
+          `${repo}: its ${field === "query" ? "query" : "authoredQuery"} names a repo itself; the repo is the key, so leave repo: out. Skipped.`,
+        );
+        skip = true;
+        break;
+      }
+      watched[field] = value.trim();
     }
-    if (typeof query !== "string" || query.trim() === "") {
-      problems.push(`${repo}: "query" should be a non-empty string; skipped.`);
-      continue;
-    }
-    if (namesRepo(query)) {
-      problems.push(
-        `${repo}: its query names a repo itself; the repo is the key, so leave repo: out. Skipped.`,
-      );
-      continue;
-    }
-    repos.push({ repo, query: query.trim() });
+    if (!skip) repos.push(watched);
   }
   return { repos, problems };
 }

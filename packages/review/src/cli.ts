@@ -63,8 +63,9 @@ into the explorer when ready.
 
 Commands:
   <pr>...           Add these PRs to the server (starting it if needed).
-  watch             Review PRs as they come to wait on you in the repos named
-                    in ~/.deep-review/watch.json, each with its own query.
+  watch             Review PRs as they come to wait on you, and follow the ones
+                    you opened, in the repos named in ~/.deep-review/watch.json,
+                    each with its own queries.
                     --repo <owner/repo> adds one to the file. Turns itself on at
                     login and after a reboot; --off stops it.
   serve             Run the server in the foreground.
@@ -86,7 +87,8 @@ Options:
   --interval <s>    watch: seconds between checks (default: ${DEFAULT_INTERVAL_MS / 1000})
   --foreground      watch: run the loop here instead of in the background
   --force           watch: install even from a path that may not outlive today
-  --port <n>        serve/--no-daemon: listen on this port (default: a free one)
+  --port <n>        serve/--no-daemon: listen on this port (default: 7331, or
+                    $DEEP_REVIEW_PORT; a free one if that is taken)
   --concurrency <n> serve: how many PRs may build at once (default: 2)
   --max-graphs <n>  Analyze at most n slices' call graphs (default: all)
   --debug-marks     Hold Shift on the page to see why each symbol is marked as it is
@@ -238,7 +240,7 @@ async function main(): Promise<void> {
       // An empty file is not fatal here: launchd would only restart us into
       // the same emptiness, and each poll says what it is not watching.
       log(
-        `Watching PRs waiting on your review ${scope}, ` +
+        `Watching PRs waiting on your review, and the ones you opened, ${scope}, ` +
           `every ${intervalMs ?? DEFAULT_INTERVAL_MS / 1000}s.`,
       );
       await runWatcher({
@@ -268,7 +270,7 @@ async function main(): Promise<void> {
       ...(values.force ? { force: true } : {}),
     });
     log(
-      `Watching PRs waiting on your review ${scope}, ` +
+      `Watching PRs waiting on your review, and the ones you opened, ${scope}, ` +
         `every ${intervalMs ?? DEFAULT_INTERVAL_MS / 1000}s.\n` +
         `Edit ${watchConfigFile()} to change which repos, or their queries; it is read on every check.\n` +
         `Reviews appear at the server's index as they build; pr-review status shows both.\n` +
@@ -349,10 +351,15 @@ async function main(): Promise<void> {
     const prs = await listServerPrs(url);
     log(`Serving ${url} — ${prs.length} PR${prs.length === 1 ? "" : "s"}.`);
     for (const pr of prs) {
-      const note =
+      const note = [
         pr.state === "ready"
           ? `${pr.slices} slices${pr.live ? ", live" : ""}`
-          : (pr.error ?? pr.log[pr.log.length - 1] ?? "");
+          : (pr.error ?? pr.log[pr.log.length - 1] ?? ""),
+        pr.role === "authored" ? "yours" : "",
+        pr.approved ? "approved" : "",
+      ]
+        .filter(Boolean)
+        .join(", ");
       console.log(
         `${pr.state.padEnd(8)} ${pr.key.padEnd(30)} ${new URL(pr.path, url).href}${note ? `  (${note})` : ""}`,
       );

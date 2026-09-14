@@ -25,9 +25,9 @@ import {
   type SizeBreakdown,
   type SliceExplorerInput,
 } from "@deep-review/call-graph";
-import { prUrl, type PrRef } from "@deep-review/pr";
+import { prUrl, type PrRef, type PrRole } from "@deep-review/pr";
 
-export type { PrRef } from "@deep-review/pr";
+export type { PrRef, PrRole } from "@deep-review/pr";
 
 /** A PR's identity across everything here: `owner/repo#number`. */
 export type PrKey = string;
@@ -86,11 +86,34 @@ export function parsePrPath(pathname: string): PrRoute | null {
  */
 export type PrState = "queued" | "building" | "ready" | "failed";
 
+/**
+ * What is known about a PR from GitHub rather than from its build: which
+ * list it belongs on and whether it has been approved. Set when a PR is
+ * added and refreshed by the watcher on every poll, since an approval can
+ * land long after the page was built. Every field is optional so a caller
+ * can say only what it knows; absent means unchanged.
+ */
+export interface PrFacts {
+  /** Waiting on your review (the default), or one you opened. */
+  role?: PrRole | undefined;
+  approved?: boolean | undefined;
+  /** Who approved, when known. */
+  approvers?: string[] | undefined;
+  author?: string | undefined;
+  draft?: boolean | undefined;
+}
+
 /** What a PR looks like from outside: the index page and `/prs` both read this. */
 export interface PrView extends PrRef {
   prUrl: string;
   key: PrKey;
   state: PrState;
+  /** Which tab of the index it belongs on. */
+  role: PrRole;
+  approved: boolean;
+  approvers: string[];
+  author?: string | undefined;
+  draft?: boolean | undefined;
   /** Mount path, so a caller can build the page URL without knowing the scheme. */
   path: string;
   title?: string | undefined;
@@ -163,6 +186,14 @@ export interface RegistryOptions {
    * the registry forgets everything on exit, as a `--no-daemon` run should.
    */
   stateFile?: string | undefined;
+  /**
+   * The page for a build, from what the build produced. Applied to each PR
+   * restored from the state file, so a page that outlives a new version of
+   * the renderer comes back in the new version's chrome rather than the
+   * one it was written with; the saved HTML is only a fallback for when
+   * this is absent.
+   */
+  rerender?: ((built: BuiltPr) => string) | undefined;
 }
 
 interface Entry extends PrRef {
@@ -170,6 +201,7 @@ interface Entry extends PrRef {
   key: PrKey;
   state: PrState;
   options: AddOptions;
+  facts: PrFacts;
   addedAt: number;
   readyAt?: number;
   error?: string;
@@ -191,6 +223,8 @@ interface Entry extends PrRef {
  */
 interface SavedPr extends PrRef {
   options: AddOptions;
+  /** Absent in state files written before facts existed: then it is a review PR, approval unknown. */
+  facts?: PrFacts | undefined;
   addedAt: number;
   readyAt: number;
   built: BuiltPr;
@@ -236,6 +270,15 @@ function isSavedPr(record: unknown): record is SavedPr {
   );
 }
 
+/** The facts a caller actually stated: an undefined field means "no news", not "unset". */
+function defined(facts: PrFacts): PrFacts {
+  const out: PrFacts = {};
+  for (const [k, v] of Object.entries(facts)) {
+    if (v !== undefined) (out as Record<string, unknown>)[k] = v;
+  }
+  return out;
+}
+
 const DEFAULTS = {
   concurrency: 2,
   sessionGraceMs: 3000,
@@ -252,6 +295,7 @@ export class PrRegistry {
   private readonly logLimit: number;
   private readonly log: (message: string) => void;
   private readonly stateFile: string | null;
+  private readonly rerender: ((built: BuiltPr) => string) | null;
   /** Keys waiting for a build slot, in the order they were added. */
   private readonly queue: PrKey[] = [];
   private building = 0;
@@ -266,6 +310,7 @@ export class PrRegistry {
     this.logLimit = options.logLimit ?? DEFAULTS.logLimit;
     this.log = options.onProgress ?? (() => {});
     this.stateFile = options.stateFile ?? null;
+    this.rerender = options.rerender ?? null;
     if (this.stateFile) this.restore(this.stateFile);
     // An idle session is worth reclaiming but not worth watching closely;
     // a sweep at a fraction of the idle window is close enough.
@@ -282,12 +327,16 @@ export class PrRegistry {
    * Add a PR, or return the one already here. Adding a PR that failed
    * retries it; adding one that is queued, building or ready is a no-op, so
    * a reader who runs the same command twice gets the same page rather than
-   * a second slicing run.
+   * a second slicing run. The facts, if any, are taken either way: they are
+   * about the PR, not about the build.
    */
-  add(ref: PrRef, options: AddOptions = {}): PrView {
+  add(ref: PrRef, options: AddOptions = {}, facts: PrFacts = {}): PrView {
     const key = prKey(ref);
     const existing = this.entries.get(key);
-    if (existing && existing.state !== "failed") return this.view(existing);
+    if (existing && existing.state !== "failed") {
+      this.applyFacts(existing, facts);
+      return this.view(existing);
+    }
 
     const entry: Entry = {
       ...ref,
@@ -295,6 +344,7 @@ export class PrRegistry {
       key,
       state: "queued",
       options,
+      facts: { ...existing?.facts, ...defined(facts) },
       addedAt: Date.now(),
       log: [],
       lastUsed: Date.now(),
@@ -308,6 +358,32 @@ export class PrRegistry {
   get(key: PrKey): PrView | null {
     const entry = this.entries.get(key);
     return entry ? this.view(entry) : null;
+  }
+
+  /**
+   * Bring what GitHub says about a held PR up to date — approval most of
+   * all, which the watcher learns on every poll. Null for a PR not here.
+   * Nothing is rebuilt: the facts sit beside the build, not inside it.
+   */
+  setFacts(key: PrKey, facts: PrFacts): PrView | null {
+    const entry = this.entries.get(key);
+    if (!entry) return null;
+    this.applyFacts(entry, facts);
+    return this.view(entry);
+  }
+
+  private applyFacts(entry: Entry, facts: PrFacts): void {
+    const next = { ...entry.facts, ...defined(facts) };
+    const changed = JSON.stringify(next) !== JSON.stringify(entry.facts);
+    if (!changed) return;
+    if (facts.approved !== undefined && facts.approved !== entry.facts.approved) {
+      const by = facts.approvers?.length ? ` by ${facts.approvers.join(", ")}` : "";
+      this.log(`${entry.key}: ${facts.approved ? `approved${by}` : "no longer approved"}.`);
+    }
+    entry.facts = next;
+    // Facts ride in the state file with the build, so a restart keeps a PR
+    // on the right tab rather than defaulting it back to "review".
+    if (entry.state === "ready") this.persist();
   }
 
   list(): PrView[] {
@@ -487,6 +563,17 @@ export class PrRegistry {
   private restore(file: string): void {
     for (const saved of readSavedPrs(file)) {
       const key = prKey(saved);
+      // Re-rendered rather than replayed: the input is the truth about the
+      // PR, the HTML is this version's way of showing it. A render that
+      // throws keeps the saved page — a stale page beats a missing one.
+      let built = saved.built;
+      if (this.rerender) {
+        try {
+          built = { ...saved.built, html: this.rerender(saved.built) };
+        } catch (error) {
+          this.log(`${key}: could not re-render — ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
       const entry: Entry = {
         owner: saved.owner,
         repo: saved.repo,
@@ -495,10 +582,11 @@ export class PrRegistry {
         key,
         state: "ready",
         options: saved.options,
+        facts: saved.facts ?? {},
         addedAt: saved.addedAt,
         readyAt: saved.readyAt,
         log: [`restored from ${path.basename(file)} — built in a previous run.`],
-        built: saved.built,
+        built,
         lastUsed: Date.now(),
       };
       this.entries.set(key, entry);
@@ -533,6 +621,7 @@ export class PrRegistry {
         repo: entry.repo,
         number: entry.number,
         options: entry.options,
+        facts: entry.facts,
         addedAt: entry.addedAt,
         readyAt: entry.readyAt,
         built: entry.built,
@@ -558,6 +647,11 @@ export class PrRegistry {
       number: entry.number,
       prUrl: entry.prUrl,
       state: entry.state,
+      role: entry.facts.role ?? "review",
+      approved: entry.facts.approved ?? false,
+      approvers: entry.facts.approvers ?? [],
+      ...(entry.facts.author ? { author: entry.facts.author } : {}),
+      ...(entry.facts.draft !== undefined ? { draft: entry.facts.draft } : {}),
       path: prMountPath(entry),
       ...(input?.prTitle ? { title: input.prTitle } : {}),
       ...(input ? { slices: input.slices.length } : {}),

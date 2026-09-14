@@ -25,6 +25,21 @@ describe("parseWatchConfig", () => {
     expect(parsed.repos).toEqual([{ repo: "acme/widgets", query: "is:open is:pr review-requested:@me" }]);
   });
 
+  it("keeps a repo's own authored query too, under the same rules", () => {
+    const parsed = parseWatchConfig({
+      repos: {
+        "acme/widgets": { authoredQuery: " is:open is:pr author:@me -is:draft " },
+        "acme/gadgets": { authoredQuery: "is:open repo:acme/other" },
+        "acme/gizmos": { authoredQuery: 3 },
+      },
+    });
+    expect(parsed.repos).toEqual([{ repo: "acme/widgets", authoredQuery: "is:open is:pr author:@me -is:draft" }]);
+    expect(parsed.problems).toEqual([
+      expect.stringMatching(/acme\/gadgets: its authoredQuery names a repo/),
+      expect.stringMatching(/acme\/gizmos: "authoredQuery" should be a non-empty string/),
+    ]);
+  });
+
   it("reads no repos from a document without any", () => {
     // `{}` and `{"repos": {}}` both mean watch nothing — never everything.
     expect(parseWatchConfig({}).repos).toEqual([]);

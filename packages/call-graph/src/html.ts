@@ -392,34 +392,78 @@ function renderGroup(
 
 export const CSS = `
   :root {
-    color-scheme: light dark;
+    /* The pool is light blue by default; the bar's switcher stamps data-theme
+       on the root to override the OS, and "system" removes it again. */
+    color-scheme: light;
     font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
     --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace;
-    --bg: #fafafa; --panel: #ffffff; --panel-2: #f4f4f5;
-    --ink: #18181b; --ink-soft: #52525b; --ink-faint: #a1a1aa;
-    --line-c: #e4e4e7;
-    --accent: #4f46e5; --accent-ink: #ffffff; --accent-soft: #eef0fe;
-    --add-bg: rgba(22, 163, 74, 0.09); --add-edge: #16a34a;
-    --del-bg: rgba(220, 38, 38, 0.08); --del-edge: #dc2626;
-    --callsite-bg: rgba(79, 70, 229, 0.10);
+    /* The pool: light blue water, and glass on top of it. Panels are
+       translucent white so the gradient and its grain read through them. */
+    --pool: linear-gradient(160deg, #b3daf1 0%, #86bfe3 42%, #6fb0da 100%);
+    --grain: 0.36;
+    --bg: #8ec4e6; --panel: rgba(255, 255, 255, 0.74); --panel-2: rgba(255, 255, 255, 0.5);
+    --ink: #0f2b45; --ink-soft: #35597a; --ink-faint: #6d92b0;
+    --line-c: rgba(15, 60, 95, 0.16);
+    --glass-hi: rgba(255, 255, 255, 0.42); --glass-lo: rgba(255, 255, 255, 0.16);
+    --glass-edge: rgba(255, 255, 255, 0.8); --glass-shadow: rgba(15, 60, 95, 0.18);
+    --wordmark: #ffffff; --pressed-bg: #0f2b45; --pressed-ink: #ffffff;
+    --scroll-thumb: rgba(15, 43, 69, 0.22); --scroll-thumb-hover: rgba(15, 43, 69, 0.4);
+    --accent: #0b63b8; --accent-ink: #ffffff; --accent-soft: rgba(11, 99, 184, 0.12);
+    --add-bg: rgba(22, 163, 74, 0.10); --add-edge: #15803d;
+    --del-bg: rgba(220, 38, 38, 0.09); --del-edge: #c92a2a;
+    --callsite-bg: rgba(11, 99, 184, 0.12);
     --add-inner: rgba(22, 163, 74, 0.28); --del-inner: rgba(220, 38, 38, 0.26);
-    --tok-kw: #9333ea; --tok-str: #15803d; --tok-com: #a1a1aa;
-    --tok-num: #b45309; --tok-fn: #4f46e5; --tok-type: #0e7490; --tok-lit: #b45309;
+    --tok-kw: #7e22ce; --tok-str: #15803d; --tok-com: #6d92b0;
+    --tok-num: #b45309; --tok-fn: #0b63b8; --tok-type: #0e7490; --tok-lit: #b45309;
   }
   @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #0c0d10; --panel: #131418; --panel-2: #1a1c22;
-      --ink: #e7e8ea; --ink-soft: #9ea1a8; --ink-faint: #5c5f66;
-      --line-c: #24262d;
-      --accent: #818cf8; --accent-ink: #0c0d10; --accent-soft: #1e2040;
-      --add-bg: rgba(74, 222, 128, 0.08); --add-edge: #4ade80;
-      --del-bg: rgba(248, 113, 113, 0.08); --del-edge: #f87171;
-      --callsite-bg: rgba(129, 140, 248, 0.14);
+    :root:not([data-theme="light"]) {
+      /* The same pool at night: deep water, panels a breath of light over it. */
+      color-scheme: dark;
+      --pool: linear-gradient(160deg, #0d2f46 0%, #0b3a55 48%, #072538 100%);
+      --grain: 0.22;
+      --bg: #0b3550; --panel: rgba(255, 255, 255, 0.075); --panel-2: rgba(255, 255, 255, 0.05);
+      --ink: #e6f1f8; --ink-soft: #9fbdd3; --ink-faint: #6f91a8;
+      --line-c: rgba(255, 255, 255, 0.13);
+      --glass-hi: rgba(255, 255, 255, 0.16); --glass-lo: rgba(255, 255, 255, 0.05);
+      --glass-edge: rgba(255, 255, 255, 0.32); --glass-shadow: rgba(0, 10, 20, 0.4);
+      --wordmark: #ffffff; --pressed-bg: #ffffff; --pressed-ink: #0f2b45;
+      --scroll-thumb: rgba(230, 241, 248, 0.2); --scroll-thumb-hover: rgba(230, 241, 248, 0.38);
+      --accent: #7cc4f0; --accent-ink: #06202f; --accent-soft: rgba(124, 196, 240, 0.16);
+      --add-bg: rgba(74, 222, 128, 0.09); --add-edge: #4ade80;
+      --del-bg: rgba(248, 113, 113, 0.09); --del-edge: #f87171;
+      --callsite-bg: rgba(124, 196, 240, 0.16);
       --add-inner: rgba(74, 222, 128, 0.28); --del-inner: rgba(248, 113, 113, 0.26);
-      --tok-kw: #c084fc; --tok-str: #86efac; --tok-com: #5c5f66;
-      --tok-num: #fbbf24; --tok-fn: #a5b4fc; --tok-type: #67e8f9; --tok-lit: #fbbf24;
+      --tok-kw: #c084fc; --tok-str: #86efac; --tok-com: #6f91a8;
+      --tok-num: #fbbf24; --tok-fn: #a5d8fa; --tok-type: #67e8f9; --tok-lit: #fbbf24;
     }
   }
+  :root[data-theme="dark"] {
+    /* The same pool at night: deep water, panels a breath of light over it. */
+    color-scheme: dark;
+    --pool: linear-gradient(160deg, #0d2f46 0%, #0b3a55 48%, #072538 100%);
+    --grain: 0.22;
+    --bg: #0b3550; --panel: rgba(255, 255, 255, 0.075); --panel-2: rgba(255, 255, 255, 0.05);
+    --ink: #e6f1f8; --ink-soft: #9fbdd3; --ink-faint: #6f91a8;
+    --line-c: rgba(255, 255, 255, 0.13);
+    --glass-hi: rgba(255, 255, 255, 0.16); --glass-lo: rgba(255, 255, 255, 0.05);
+    --glass-edge: rgba(255, 255, 255, 0.32); --glass-shadow: rgba(0, 10, 20, 0.4);
+    --wordmark: #ffffff; --pressed-bg: #ffffff; --pressed-ink: #0f2b45;
+      --scroll-thumb: rgba(230, 241, 248, 0.2); --scroll-thumb-hover: rgba(230, 241, 248, 0.38);
+    --accent: #7cc4f0; --accent-ink: #06202f; --accent-soft: rgba(124, 196, 240, 0.16);
+    --add-bg: rgba(74, 222, 128, 0.09); --add-edge: #4ade80;
+    --del-bg: rgba(248, 113, 113, 0.09); --del-edge: #f87171;
+    --callsite-bg: rgba(124, 196, 240, 0.16);
+    --add-inner: rgba(74, 222, 128, 0.28); --del-inner: rgba(248, 113, 113, 0.26);
+    --tok-kw: #c084fc; --tok-str: #86efac; --tok-com: #6f91a8;
+    --tok-num: #fbbf24; --tok-fn: #a5d8fa; --tok-type: #67e8f9; --tok-lit: #fbbf24;
+  }
+  /* Scrollbars out of the way: thin, no track, a thumb in the page's own ink
+     that firms up under the pointer. The standard properties cover Chrome,
+     Edge, Firefox and Safari 18; where a platform draws overlay scrollbars
+     of its own, they stay overlay. */
+  * { scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; }
+  *:hover { scrollbar-color: var(--scroll-thumb-hover) transparent; }
   .tok-kw { color: var(--tok-kw); } .tok-str { color: var(--tok-str); }
   .tok-com { color: var(--tok-com); font-style: italic; } .tok-num { color: var(--tok-num); }
   .tok-fn { color: var(--tok-fn); } .tok-type { color: var(--tok-type); }
@@ -529,6 +573,10 @@ export const CSS = `
   /* No overflow clipping on the pane: it would make the pane the sticky
      header's scroll root instead of the panel. The bar and pre round their
      own corners. */
+  /* Folding a pane is one transition of the source's max-height between 0
+     and its measured height (--pane-h, set by SCOPE_JS on each click), so
+     closing and opening are the same motion run in opposite directions.
+     Border-box, so the cap at 0 takes the padding and border with it. */
   .code-pane { position: relative; margin: 0.5rem 0 0.9rem; }
   .scope-bar {
     /* .panel's own padding (0.7rem 0.9rem) would otherwise leave a gap
@@ -538,9 +586,22 @@ export const CSS = `
        sits at the panel's true edge, not floating mid-content. */
     position: sticky; top: -0.7rem; z-index: 2; display: flex; align-items: baseline; gap: 0.15rem;
     margin: -0.7rem -0.9rem 0; padding: 0.4rem 0.9rem; background: var(--panel-2);
-    border: 1px solid var(--line-c); border-bottom: none; border-radius: 0;
+    /* 8px, like every panel and pane: the bar's top corners meet the panel's
+       own rounded corners when it sticks, and the source's rounded bottom
+       when it does not. Folded, all four corners round. */
+    border: 1px solid var(--line-c); border-bottom: 1px solid transparent; border-radius: 8px 8px 0 0;
     font-family: var(--mono); font-size: 0.72rem; white-space: nowrap; overflow: hidden;
+    cursor: pointer; user-select: none;
+    transition: border-radius 0.3s cubic-bezier(0.32, 0.72, 0, 1), border-bottom-color 0.3s ease;
   }
+  .scope-bar:hover { background: var(--accent-soft); }
+  .code-pane.collapsed .scope-bar { border-bottom-color: var(--line-c); border-radius: 8px; }
+  .scope-bar .scope-caret { display: inline-flex; align-self: center; margin-right: 0.3rem; color: var(--ink-faint); }
+  .scope-bar .scope-caret svg {
+    width: 0.8rem; height: 0.8rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+    transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .code-pane.collapsed .scope-caret svg { transform: rotate(-90deg); }
   .scope-bar .scope-path { color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; }
   .scope-bar .scope-path .name { color: var(--ink); font-weight: 600; }
   .scope-bar .scope-sym { color: var(--ink); font-weight: 600; }
@@ -548,7 +609,20 @@ export const CSS = `
   .scope-bar .stat { margin-left: auto; padding-left: 0.8rem; font-size: 0.68rem; font-variant-numeric: tabular-nums; }
   .scope-bar .plus { color: var(--add-edge); }
   .scope-bar .minus { color: var(--del-edge); margin-left: 0.4rem; }
-  .code-pane > pre.source { margin: 0; border-top-left-radius: 0; border-top-right-radius: 0; }
+  .code-pane > pre.source {
+    margin: 0; border-top-left-radius: 0; border-top-right-radius: 0;
+    box-sizing: border-box; overflow-y: hidden;
+    max-height: var(--pane-h, none);
+    /* One curve and one duration for every property that moves, so the
+       fold reads as a single motion and its reverse is the same motion. */
+    transition: max-height 0.3s cubic-bezier(0.32, 0.72, 0, 1), padding 0.3s cubic-bezier(0.32, 0.72, 0, 1),
+      border-width 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  /* Folded to nothing: the padding and border go too, or a sliver of pane
+     and its horizontal scrollbar would stay under the bar. */
+  .code-pane.collapsed > pre.source {
+    max-height: 0; padding-top: 0; padding-bottom: 0; border-top-width: 0; border-bottom-width: 0; overflow: hidden;
+  }
   .gap-btns { display: inline-flex; align-items: center; gap: 2px; }
   .gap-btn { border: none; background: none; color: var(--accent); cursor: pointer; font: inherit; font-size: 0.7rem; line-height: 1; padding: 0.05rem 0.3rem; border-radius: 4px; }
   .gap-btn:hover { background: var(--accent-soft); }
@@ -719,6 +793,43 @@ export const SCOPE_JS = `
     }
   }
   window.updateScopeBars = updateScopeBars;
+  /* Anywhere on a scope bar folds its pane, GitHub-style; the bar's own
+     controls, if any, keep their meaning. */
+  document.addEventListener("click", function (e) {
+    var bar = e.target instanceof Element ? e.target.closest(".scope-bar") : null;
+    if (!bar || e.target.closest("a, button")) return;
+    var pane = bar.closest(".code-pane");
+    var pre = pane && pane.querySelector(":scope > pre.source");
+    if (!pane || !pre) return;
+    var folded = !pane.classList.contains("collapsed");
+    /* The cap is measured, never auto: a transition needs two lengths, and
+       the same two in both directions. Closing, the height the source has
+       now. Opening, the height it will have — found by unfolding it for one
+       silent layout, with transitions off, and folding it back before the
+       real change is made. */
+    var height;
+    if (folded) {
+      height = pre.offsetHeight;
+    } else {
+      pre.style.transition = "none";
+      pane.classList.remove("collapsed");
+      height = pre.offsetHeight;
+      pane.classList.add("collapsed");
+      void pre.offsetHeight;
+      pre.style.transition = "";
+    }
+    pane.style.setProperty("--pane-h", height + "px");
+    void pre.offsetHeight;
+    pane.classList.toggle("collapsed", folded);
+    bar.setAttribute("aria-expanded", folded ? "false" : "true");
+  });
+  /* Open again, the cap comes off, so a pane that later grows — a gap
+     expanded — is not clipped at the height it happened to have. */
+  document.addEventListener("transitionend", function (e) {
+    if (e.propertyName !== "max-height" || !(e.target instanceof Element)) return;
+    var pane = e.target.closest(".code-pane");
+    if (pane && !pane.classList.contains("collapsed")) pane.style.removeProperty("--pane-h");
+  });
   document.addEventListener("scroll", function (e) {
     var pane = e.target instanceof Element ? e.target.closest(".panel, .col") : null;
     if (!pane) return;

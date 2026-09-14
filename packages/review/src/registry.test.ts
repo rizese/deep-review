@@ -366,3 +366,108 @@ describe("PrRegistry persistence", () => {
     reloaded.dispose();
   });
 });
+
+describe("PrRegistry re-rendering", () => {
+  let home: string;
+  beforeEach(() => {
+    home = mkdtempSync(path.join(os.tmpdir(), "registry-rerender-"));
+  });
+  afterEach(() => rmSync(home, { recursive: true, force: true }));
+  const quickBuild = ({ prUrl, navBase }: { prUrl: string; navBase: string }) =>
+    Promise.resolve(built(Number(prUrl.split("/").pop()), navBase));
+
+  it("renders a restored PR's page afresh from its input, falling back to the saved page", async () => {
+    const stateFile = path.join(home, "registry.json");
+    const registry = new PrRegistry({ build: quickBuild, stateFile });
+    registry.add(ref(1));
+    await registry.settled();
+    registry.dispose();
+
+    const fresh = new PrRegistry({
+      build: quickBuild,
+      stateFile,
+      rerender: ({ input }) => `<html>new chrome for ${input.prTitle}</html>`,
+    });
+    expect(fresh.html("a/b#1")).toBe("<html>new chrome for PR 1</html>");
+    fresh.dispose();
+
+    const broken = new PrRegistry({
+      build: quickBuild,
+      stateFile,
+      rerender: () => {
+        throw new Error("renderer down");
+      },
+    });
+    expect(broken.html("a/b#1")).toBe("<html>1</html>");
+    broken.dispose();
+  });
+});
+
+describe("PrRegistry facts", () => {
+  let home: string;
+  let stateFile: string;
+  beforeEach(() => {
+    home = mkdtempSync(path.join(os.tmpdir(), "registry-facts-"));
+    stateFile = path.join(home, "registry.json");
+  });
+  afterEach(() => rmSync(home, { recursive: true, force: true }));
+
+  const quickBuild = ({ prUrl, navBase }: { prUrl: string; navBase: string }) =>
+    Promise.resolve(built(Number(prUrl.split("/").pop()), navBase));
+
+  it("takes a PR's role and approval when it is added, and defaults them when it is not told", async () => {
+    const registry = new PrRegistry({ build: quickBuild });
+    registry.add(ref(1), {}, { role: "authored", author: "me", draft: true });
+    registry.add(ref(2));
+    await registry.settled();
+    expect(registry.get("a/b#1")).toMatchObject({ role: "authored", author: "me", draft: true, approved: false, approvers: [] });
+    expect(registry.get("a/b#2")).toMatchObject({ role: "review", approved: false, approvers: [] });
+    registry.dispose();
+  });
+
+  it("updates the facts of a held PR without rebuilding it, and says only what changed", async () => {
+    let calls = 0;
+    const log: string[] = [];
+    const registry = new PrRegistry({
+      build: (request) => {
+        calls++;
+        return quickBuild(request);
+      },
+      onProgress: (m) => log.push(m),
+    });
+    registry.add(ref(1));
+    await registry.settled();
+    expect(registry.setFacts("a/b#1", { approved: true, approvers: ["alex"] })).toMatchObject({
+      approved: true,
+      approvers: ["alex"],
+      role: "review",
+    });
+    // A field left undefined is no news, not a reset.
+    expect(registry.setFacts("a/b#1", { role: "authored" })).toMatchObject({ approved: true, role: "authored" });
+    expect(registry.setFacts("a/b#9", { approved: true })).toBeNull();
+    // Re-adding a held PR takes the facts too, and is still not a build.
+    registry.add(ref(1), {}, { approved: false });
+    await registry.settled();
+    expect(registry.get("a/b#1")!.approved).toBe(false);
+    expect(calls).toBe(1);
+    expect(log.filter((m) => /approved/.test(m))).toEqual(["a/b#1: approved by alex.", "a/b#1: no longer approved."]);
+    registry.dispose();
+  });
+
+  it("keeps the facts across a restart, so a PR stays on its tab", async () => {
+    const registry = new PrRegistry({ build: quickBuild, stateFile });
+    registry.add(ref(1), {}, { role: "authored", author: "me" });
+    await registry.settled();
+    registry.setFacts("a/b#1", { approved: true, approvers: ["alex"] });
+    registry.dispose();
+    const reloaded = new PrRegistry({ build: quickBuild, stateFile });
+    expect(reloaded.get("a/b#1")).toMatchObject({
+      state: "ready",
+      role: "authored",
+      author: "me",
+      approved: true,
+      approvers: ["alex"],
+    });
+    reloaded.dispose();
+  });
+});

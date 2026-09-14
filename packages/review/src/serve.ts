@@ -24,6 +24,8 @@ import {
   prMountPath,
   type AddOptions,
   type BuildPr,
+  type BuiltPr,
+  type PrFacts,
   type PrRef,
   type PrView,
 } from "./registry.js";
@@ -61,6 +63,8 @@ export interface NavServerOptions {
   onProgress?: ((message: string) => void) | undefined;
   /** Where the registry remembers its ready PRs between runs; see `RegistryOptions.stateFile`. */
   stateFile?: string | undefined;
+  /** Re-renders a restored PR's page from its input; see `RegistryOptions.rerender`. */
+  rerender?: ((built: BuiltPr) => string) | undefined;
 }
 
 export interface NavServer {
@@ -68,7 +72,7 @@ export interface NavServer {
   url: string;
   port: number;
   /** Add a PR (or return the one already here); it builds in the background. */
-  add(ref: PrRef, options?: AddOptions): PrView;
+  add(ref: PrRef, options?: AddOptions, facts?: PrFacts): PrView;
   /** The page URL for a PR, ready or not. */
   urlFor(ref: Pick<PrRef, "owner" | "repo" | "number">): string;
   registry: PrRegistry;
@@ -153,6 +157,7 @@ export async function startNavServer(options: NavServerOptions): Promise<NavServ
     ...(options.sessionGraceMs !== undefined ? { sessionGraceMs: options.sessionGraceMs } : {}),
     ...(options.sessionIdleMs !== undefined ? { sessionIdleMs: options.sessionIdleMs } : {}),
     ...(options.stateFile !== undefined ? { stateFile: options.stateFile } : {}),
+    ...(options.rerender !== undefined ? { rerender: options.rerender } : {}),
     onProgress: log,
   });
 
@@ -283,6 +288,7 @@ export async function startNavServer(options: NavServerOptions): Promise<NavServ
           repo?: string;
           number?: number;
           options?: AddOptions;
+          facts?: PrFacts;
         };
         if (!body.owner || !body.repo || !Number.isInteger(body.number)) {
           sendJson(res, 400, { why: "owner, repo and number are required" });
@@ -300,14 +306,14 @@ export async function startNavServer(options: NavServerOptions): Promise<NavServ
             registry.remove(existing.key);
           }
         }
-        const pr = registry.add(ref, body.options ?? {});
+        const pr = registry.add(ref, body.options ?? {}, body.facts ?? {});
         sendJson(res, 200, { pr });
         return;
       }
       sendText(res, 405, "text/plain", "method not allowed");
       return;
     }
-    if (path.startsWith("/prs/") && method === "DELETE") {
+    if (path.startsWith("/prs/") && (method === "DELETE" || method === "PATCH")) {
       let key: string;
       try {
         key = decodeURIComponent(path.slice("/prs/".length));
@@ -316,7 +322,22 @@ export async function startNavServer(options: NavServerOptions): Promise<NavServ
         sendJson(res, 404, { why: "no such PR on this server" });
         return;
       }
-      sendJson(res, 200, { removed: registry.remove(key) });
+      if (method === "DELETE") {
+        sendJson(res, 200, { removed: registry.remove(key) });
+        return;
+      }
+      // PATCH: what GitHub now says about a held PR — approval, role — with
+      // no rebuild. The watcher sends this every poll for every PR it holds.
+      let facts: unknown;
+      try {
+        facts = await readJsonBody(req);
+      } catch (error) {
+        sendJson(res, 400, { why: error instanceof Error ? error.message : "bad body" });
+        return;
+      }
+      const pr = registry.setFacts(key, (facts ?? {}) as PrFacts);
+      if (!pr) sendJson(res, 404, { why: "no such PR on this server" });
+      else sendJson(res, 200, { pr });
       return;
     }
 
@@ -404,7 +425,7 @@ export async function startNavServer(options: NavServerOptions): Promise<NavServ
   return {
     url: `${origin}/`,
     port,
-    add: (ref, addOptions) => registry.add(ref, addOptions ?? {}),
+    add: (ref, addOptions, facts) => registry.add(ref, addOptions ?? {}, facts ?? {}),
     urlFor: (ref) => `${origin}${prMountPath(ref)}`,
     registry,
     closed,

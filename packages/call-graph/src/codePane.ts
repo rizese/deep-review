@@ -41,6 +41,10 @@ export interface CodePaneInput {
 const MARKDOWN_FILE = /\.mdx?$/i;
 
 /** "packages/x/retry.ts" → dimmed directory, bold basename. */
+/** The fold caret at the head of every scope bar: points down open, right folded (CSS rotates it). */
+export const SCOPE_CARET =
+  '<span class="scope-caret" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></svg></span>';
+
 function pathHtml(file: string): string {
   const cut = file.lastIndexOf("/") + 1;
   return `${cut > 0 ? `<span class="dir">${esc(file.slice(0, cut))}</span>` : ""}<span class="name">${esc(file.slice(cut))}</span>`;
@@ -79,7 +83,9 @@ export function renderCodePane(input: CodePaneInput): string {
   // column alignment are meaningful, so it keeps its horizontal scroll.
   const wrap = MARKDOWN_FILE.test(file);
   const preAttrs = wrap ? ` data-w="${width}" style="--gutter:${width}"` : ` data-w="${width}"`;
-  return `<div class="code-pane"${paneAttrs}><div class="scope-bar"${entry ? ` data-key="${esc(entry.key)}"` : ""}><span class="scope-path">${pathHtml(
+  // The caret leads, as GitHub's does; the whole bar is the toggle (SCOPE_JS)
+  // and the pane folds by transition, so the caret only says which way.
+  return `<div class="code-pane"${paneAttrs}><div class="scope-bar"${entry ? ` data-key="${esc(entry.key)}"` : ""} aria-expanded="true">${SCOPE_CARET}<span class="scope-path">${pathHtml(
     file,
   )}</span><span class="scope-sym">${label}</span>${statHtml(rows)}</div><pre class="source${wrap ? " wrap" : ""}"${preAttrs}><span class="lines">${body}</span></pre></div>`;
 }
