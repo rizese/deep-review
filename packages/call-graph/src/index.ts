@@ -6,6 +6,8 @@ export {
 } from "./analyze.js";
 export { CSS as REPORT_CSS } from "./html.js";
 export { escapeHtml } from "./highlight.js";
+export { panelRendererFor } from "./sliceExplorer.js";
+export type { PanelRenderer } from "./navSession.js";
 export { CHROME_CSS, CHROME_JS, THEME_HEAD_JS, renderChrome, type ChromeOptions } from "./chrome.js";
 export {
   NavSession,

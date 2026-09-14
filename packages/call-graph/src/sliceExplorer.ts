@@ -1,4 +1,5 @@
-import { EXPLORER_CSS, EXPLORER_NAV_JS, renderPanel } from "./explorer.js";
+import type { PanelRenderer } from "./navSession.js";
+import { renderDefinitionPanel, EXPLORER_CSS, EXPLORER_NAV_JS, renderPanel } from "./explorer.js";
 import { renderCodePane } from "./codePane.js";
 import { fragmentDiffRows } from "./diffView.js";
 import { escapeHtml as esc, languageOf } from "./highlight.js";
@@ -114,6 +115,20 @@ export interface SliceExplorerInput {
  * breadcrumbs. The navigation server builds the same index, so a panel it
  * renders later matches the page.
  */
+/**
+ * The panel renderer for this page's navigation session: definitions the
+ * reader reaches by clicking are rendered against the page's own file
+ * index, built once, on the first panel — most sessions never open one.
+ */
+export function panelRendererFor(input: SliceExplorerInput): PanelRenderer {
+  let index: FileIndex | null = null;
+  const debug = input.debugMarks ?? false;
+  return (def, hunks) => {
+    index ??= explorerFileIndex(input);
+    return renderDefinitionPanel(def, index, { debug, hunks });
+  };
+}
+
 export function explorerFileIndex(input: SliceExplorerInput): FileIndex {
   return buildFileIndex([...input.files, ...input.slices.flatMap((s) => s.graph?.files ?? [])], {
     debug: input.debugMarks,

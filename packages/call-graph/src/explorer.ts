@@ -24,9 +24,9 @@ function sitesFor(side: "before" | "after", edge: { before: CallSite[]; after: C
 const PANEL_CONTEXT = 10;
 
 /** Panel id of a definition: a graph node keeps its own; anything else is `def:<id>`. */
-export function definitionPanelId(def: DefinitionTarget): string {
-  return def.nodeId ?? `def:${def.id}`;
-}
+import { definitionPanelId } from "./navSession.js";
+
+export { definitionPanelId };
 
 export interface PanelOptions {
   /** Debug builds: every mark says where it came from (`data-why`). */

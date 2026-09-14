@@ -316,6 +316,51 @@ export async function startNavServer(options: NavServerOptions): Promise<NavServ
       sendText(res, 405, "text/plain", "method not allowed");
       return;
     }
+    // What changes, as it changes: a snapshot of every PR, then a `pr` event
+    // per change and a `removed` per drop. Pages listen here instead of
+    // polling; a comment every 15 s keeps proxies from closing a quiet stream.
+    if (method === "GET" && path === "/events") {
+      res.writeHead(200, {
+        ...NO_STORE,
+        "Content-Type": "text/event-stream; charset=utf-8",
+        Connection: "keep-alive",
+      });
+      const send = (event: string, data: unknown): void => {
+        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      };
+      send("snapshot", { prs: registry.list() });
+      const unsubscribe = registry.subscribe((event) => send(event.type, event));
+      const heartbeat = setInterval(() => res.write(": ping\n\n"), 15_000);
+      req.on("close", () => {
+        clearInterval(heartbeat);
+        unsubscribe();
+      });
+      return;
+    }
+    // A ready PR's page input as JSON — for a client that renders the page
+    // itself rather than taking the server's HTML.
+    const inputRoute = /^\/prs\/([^/]+)\/input$/.exec(path);
+    if (inputRoute && method === "GET") {
+      let key: string;
+      try {
+        key = decodeURIComponent(inputRoute[1]!);
+      } catch {
+        sendJson(res, 404, { why: "no such PR on this server" });
+        return;
+      }
+      const pr = registry.get(key);
+      if (!pr) {
+        sendJson(res, 404, { why: "no such PR on this server" });
+        return;
+      }
+      const input = registry.input(key);
+      if (!input) {
+        sendJson(res, 409, { why: `not built yet (${pr.state})`, state: pr.state });
+        return;
+      }
+      sendJson(res, 200, input);
+      return;
+    }
     if (path.startsWith("/prs/") && (method === "DELETE" || method === "PATCH")) {
       let key: string;
       try {

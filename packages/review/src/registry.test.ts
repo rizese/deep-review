@@ -524,6 +524,51 @@ describe("PrRegistry retries", () => {
   });
 });
 
+describe("PrRegistry events", () => {
+  it("tells listeners about every change to a PR, and when one goes", async () => {
+    const { build, pending } = manualBuild();
+    const registry = new PrRegistry({ build });
+    const seen: string[] = [];
+    const stop = registry.subscribe((e) => seen.push(e.type === "pr" ? `${e.pr.key}:${e.pr.state}` : `removed:${e.key}`));
+    registry.add(ref(1));
+    await tick();
+    registry.setFacts("a/b#1", { approved: true });
+    pending.get(urlOf(1))!.resolve();
+    await tick();
+    registry.remove("a/b#1");
+    // Queued first, then building (once per log line too), then ready, then gone.
+    expect(seen[0]).toBe("a/b#1:queued");
+    expect(seen.slice(1, -2).every((s) => s === "a/b#1:building")).toBe(true);
+    expect(seen.slice(1, -2).length).toBeGreaterThanOrEqual(2);
+    expect(seen.slice(-2)).toEqual(["a/b#1:ready", "removed:a/b#1"]);
+    // Unsubscribed, nothing more arrives; a listener that throws does not stop the others.
+    const count = seen.length;
+    stop();
+    registry.subscribe(() => {
+      throw new Error("boom");
+    });
+    const after: string[] = [];
+    registry.subscribe((e) => after.push(e.type));
+    registry.add(ref(2));
+    expect(seen).toHaveLength(count);
+    expect(after).toEqual(["pr"]);
+    registry.dispose();
+  });
+
+  it("hands out a ready PR's input, and nothing before that", async () => {
+    const { build, pending } = manualBuild();
+    const registry = new PrRegistry({ build });
+    registry.add(ref(1));
+    await tick();
+    expect(registry.input("a/b#1")).toBeNull();
+    pending.get(urlOf(1))!.resolve();
+    await tick();
+    expect(registry.input("a/b#1")).toMatchObject({ prTitle: "PR 1", navBase: "/pr/a/b/1/" });
+    expect(registry.input("a/b#9")).toBeNull();
+    registry.dispose();
+  });
+});
+
 describe("PrRegistry checkouts", () => {
   const quickBuild = ({ prUrl, navBase }: { prUrl: string; navBase: string }) =>
     Promise.resolve({ ...built(Number(prUrl.split("/").pop()), navBase), headSha: `h${prUrl.slice(-1)}`, baseSha: "base" });

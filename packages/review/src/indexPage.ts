@@ -257,7 +257,22 @@ document.getElementById("hide-approved").addEventListener("change", function (e)
   apply();
 });
 apply();
-setInterval(poll, 2000);
+/* The server says when something changed; the list is fetched then, not
+   every two seconds. Many changes in a burst (a build's log lines) are one
+   fetch. Without EventSource, the old poll. */
+var pending = null;
+function refreshSoon() {
+  if (pending) return;
+  pending = setTimeout(function () { pending = null; poll(); }, 150);
+}
+if (window.EventSource) {
+  var events = new EventSource("/events");
+  events.addEventListener("pr", refreshSoon);
+  events.addEventListener("removed", refreshSoon);
+  events.addEventListener("snapshot", refreshSoon);
+} else {
+  setInterval(poll, 2000);
+}
 `;
 
 export function renderIndexPage(prs: PrView[]): string {
@@ -331,20 +346,39 @@ ${pr.error ? `<div class="why">${esc(pr.error)}</div>` : ""}
 <script>
 ${CHROME_JS}
 var KEY = ${JSON.stringify(pr.key)};
-setInterval(function () {
-  fetch("/prs", { cache: "no-store" })
-    .then(function (r) { return r.ok ? r.json() : null; })
-    .then(function (data) {
-      if (!data) return;
-      var mine = data.prs.filter(function (p) { return p.key === KEY; })[0];
-      if (!mine) { location.href = "/"; return; }
-      /* Ready: the same URL now serves the explorer itself. */
-      if (mine.state === "ready") { location.reload(); return; }
-      var log = document.querySelector(".log");
-      if (log && mine.log) log.textContent = mine.log.join("\\n");
-    })
-    .catch(function () { /* server gone; nothing to show */ });
-}, 1500);
+function show(mine) {
+  /* Ready: the same URL now serves the explorer itself. */
+  if (mine.state === "ready") { location.reload(); return; }
+  var log = document.querySelector(".log");
+  if (log && mine.log) log.textContent = mine.log.join("\\n");
+}
+if (window.EventSource) {
+  var events = new EventSource("/events");
+  events.addEventListener("snapshot", function (e) {
+    var mine = JSON.parse(e.data).prs.filter(function (p) { return p.key === KEY; })[0];
+    if (!mine) { location.href = "/"; return; }
+    show(mine);
+  });
+  events.addEventListener("pr", function (e) {
+    var pr = JSON.parse(e.data).pr;
+    if (pr.key === KEY) show(pr);
+  });
+  events.addEventListener("removed", function (e) {
+    if (JSON.parse(e.data).key === KEY) location.href = "/";
+  });
+} else {
+  setInterval(function () {
+    fetch("/prs", { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (!data) return;
+        var mine = data.prs.filter(function (p) { return p.key === KEY; })[0];
+        if (!mine) { location.href = "/"; return; }
+        show(mine);
+      })
+      .catch(function () { /* server gone; nothing to show */ });
+  }, 1500);
+}
 </script>
 </body>
 </html>

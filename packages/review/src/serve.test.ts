@@ -133,6 +133,47 @@ describe("navigation server", () => {
     expect((await patch("a/b#1", { approved: false, approvers: [], role: "review" })).status).toBe(200);
   });
 
+  it("serves a ready PR's input as JSON, and says when there is none", async () => {
+    const res = await fetch(new URL("/prs/a%2Fb%231/input", server.url));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ prTitle: "A PR", repo: "a/b", number: 1, navBase: "/pr/a/b/1/" });
+    expect((await fetch(new URL("/prs/a%2Fb%239/input", server.url))).status).toBe(404);
+    expect((await fetch(new URL("/prs/%zz/input", server.url))).status).toBe(404);
+  });
+
+  it("streams a snapshot and then each change over /events", async () => {
+    const controller = new AbortController();
+    const res = await fetch(new URL("/events", server.url), { signal: controller.signal });
+    expect(res.headers.get("content-type")).toMatch(/text\/event-stream/);
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    const until = async (marker: string): Promise<string> => {
+      while (!buffer.includes(marker)) {
+        const { value, done } = await reader.read();
+        if (done) throw new Error("stream ended");
+        buffer += decoder.decode(value, { stream: true });
+      }
+      return buffer;
+    };
+    await until("event: snapshot");
+    expect(buffer).toMatch(/event: snapshot\ndata: \{"prs":\[\{.*"key":"a\/b#1"/);
+    await fetch(new URL("/prs/a%2Fb%231", server.url), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ approvers: ["sam"], approved: true }),
+    });
+    await until("event: pr");
+    expect(buffer).toMatch(/event: pr\ndata: \{"type":"pr","pr":\{.*"approvers":\["sam"\]/);
+    controller.abort();
+    // Back the way the other tests expect it.
+    await fetch(new URL("/prs/a%2Fb%231", server.url), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ approvers: [], approved: false }),
+    });
+  });
+
   it("answers /definition with a stable id and the panel to open", async () => {
     const first = await json("/definition?file=use.ts&line=4&col=9");
     const second = await json("/definition?file=use.ts&line=4&col=9");

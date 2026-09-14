@@ -23,6 +23,7 @@ import { existsSync } from "node:fs";
 import {
   explorerSize,
   NavSession,
+  panelRendererFor,
   type SizeBreakdown,
   type SliceExplorerInput,
 } from "@deep-review/call-graph";
@@ -147,6 +148,14 @@ export const DEFAULT_RETRY: RetryPolicy = {
   buildRetries: 1,
   buildDelayMs: 60_000,
 };
+
+/**
+ * What changed, for whoever is listening: a PR's view after any change to
+ * it — state, a log line, its facts — or a PR gone. `/events` streams
+ * these so a page learns of a build finishing the moment it does rather
+ * than on its next poll.
+ */
+export type RegistryEvent = { type: "pr"; pr: PrView } | { type: "removed"; key: PrKey };
 
 /** What a PR looks like from outside: the index page and `/prs` both read this. */
 export interface PrView extends PrRef {
@@ -333,6 +342,7 @@ export class PrRegistry {
   private readonly persistence: { store: PrStore; render: (built: StoredBuild) => string } | null;
   private readonly onRemoved: ((removed: CheckoutRef, remaining: CheckoutRef[]) => void) | null;
   private readonly retry: RetryPolicy;
+  private readonly listeners = new Set<(event: RegistryEvent) => void>();
   /** Keys waiting for a build slot, in the order they were added. */
   private readonly queue: PrKey[] = [];
   private building = 0;
@@ -388,9 +398,33 @@ export class PrRegistry {
       lastUsed: Date.now(),
     };
     this.entries.set(key, entry);
+    this.emit(entry);
     this.queue.push(key);
     this.pump();
     return this.view(entry);
+  }
+
+  /** Hear of every change to every PR here; returns the way to stop listening. */
+  subscribe(listener: (event: RegistryEvent) => void): () => void {
+    this.listeners.add(listener);
+    return () => void this.listeners.delete(listener);
+  }
+
+  private emit(entry: Entry): void {
+    if (this.listeners.size === 0) return;
+    const event: RegistryEvent = { type: "pr", pr: this.view(entry) };
+    for (const listener of this.listeners) {
+      try {
+        listener(event);
+      } catch (error) {
+        this.log(`a listener failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
+
+  /** A ready PR's page input, for a client that renders the page itself; null until built. */
+  input(key: PrKey): SliceExplorerInput | null {
+    return this.entries.get(key)?.built?.input ?? null;
   }
 
   get(key: PrKey): PrView | null {
@@ -422,6 +456,7 @@ export class PrRegistry {
     // Facts are stored with the build, so a restart keeps a PR on the right
     // tab rather than defaulting it back to "review".
     this.persist(entry);
+    this.emit(entry);
     // A failed PR whose head has moved is a different PR: whatever went wrong
     // may be fixed, so it is tried again now, with a clean slate.
     if (entry.state === "failed" && facts.headSha && entry.failure && entry.failure.headSha !== facts.headSha) {
@@ -441,6 +476,7 @@ export class PrRegistry {
     if (entry.failure) entry.failure = { ...entry.failure, nextRetryAt: undefined, parked: false };
     entry.log.push(why);
     this.log(`${entry.key}: ${why}.`);
+    this.emit(entry);
     this.queue.push(entry.key);
     this.pump();
   }
@@ -517,7 +553,7 @@ export class PrRegistry {
       }
       this.log(`${key}: starting language services.`);
       entry.session = new NavSession(entry.built.headDir, entry.built.input, {
-        debug: entry.built.input.debugMarks,
+        renderPanel: panelRendererFor(entry.built.input),
       });
       entry.session.warm();
     }
@@ -563,6 +599,13 @@ export class PrRegistry {
     // PR once it is merged or closed, and a record that still held it would
     // put it back on the index at the next restart.
     this.persistence?.store.remove(entry);
+    for (const listener of this.listeners) {
+      try {
+        listener({ type: "removed", key });
+      } catch {
+        // A listener's trouble is its own.
+      }
+    }
     if (this.onRemoved) {
       try {
         this.onRemoved(checkoutOf(entry), this.checkouts());
@@ -624,10 +667,12 @@ export class PrRegistry {
 
   private async run(entry: Entry): Promise<void> {
     entry.state = "building";
+    this.emit(entry);
     const note = (message: string): void => {
       entry.log.push(message);
       if (entry.log.length > this.logLimit) entry.log.shift();
       this.log(`${entry.key}: ${message}`);
+      this.emit(entry);
     };
     try {
       const built = await this.build(
@@ -674,6 +719,7 @@ export class PrRegistry {
       }
     }
     this.persist(entry);
+    this.emit(entry);
   }
 
   /**

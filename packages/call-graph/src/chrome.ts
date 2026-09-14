@@ -227,6 +227,27 @@ export const CHROME_JS = `
       .then(function (data) { if (data) count.textContent = data.prs.length; })
       .catch(function () { /* server gone; keep the last number */ });
   }
+  /* The count follows the server's own stream of changes; a poll only
+     where the browser has no EventSource. */
+  var keys = null;
+  function listen() {
+    var events = new EventSource("/events");
+    events.addEventListener("snapshot", function (e) {
+      keys = {};
+      JSON.parse(e.data).prs.forEach(function (p) { keys[p.key] = true; });
+      count.textContent = Object.keys(keys).length;
+    });
+    events.addEventListener("pr", function (e) {
+      if (!keys) return;
+      keys[JSON.parse(e.data).pr.key] = true;
+      count.textContent = Object.keys(keys).length;
+    });
+    events.addEventListener("removed", function (e) {
+      if (!keys) return;
+      delete keys[JSON.parse(e.data).key];
+      count.textContent = Object.keys(keys).length;
+    });
+  }
   add.addEventListener("click", function () {
     form.hidden = !form.hidden;
     add.setAttribute("aria-expanded", form.hidden ? "false" : "true");
@@ -250,7 +271,10 @@ export const CHROME_JS = `
       })
       .catch(function () { note.textContent = "the server is not answering"; note.className = "add-note bad"; });
   });
-  refresh();
-  setInterval(refresh, 5000);
+  if (window.EventSource) listen();
+  else {
+    refresh();
+    setInterval(refresh, 5000);
+  }
 })();
 `;
