@@ -210,8 +210,11 @@ export async function startNavServer(options: NavServerOptions): Promise<NavServ
     if (stopped) return closed;
     stopped = true;
     registry.dispose();
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    // Connections first, then the listener: close() waits for every open
+    // connection to end, and an /events stream never does on its own — a
+    // stop with one browser tab open hung the server forever.
     server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
     resolveClosed();
     return closed;
   };

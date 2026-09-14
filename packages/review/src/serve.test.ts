@@ -350,6 +350,16 @@ describe("navigation server", () => {
     await fresh.close();
   }, 15_000);
 
+  it("stops when asked even while an /events stream is open", async () => {
+    const fresh = await startNavServer({ build: () => Promise.reject(new Error("unused")) });
+    const controller = new AbortController();
+    const stream = await fetch(new URL("/events", fresh.url), { signal: controller.signal });
+    expect(stream.status).toBe(200);
+    const stopped = Promise.race([fresh.close().then(() => "closed"), new Promise((r) => setTimeout(() => r("hung"), 3000))]);
+    expect(await stopped).toBe("closed");
+    controller.abort();
+  });
+
   it("stops when asked over /quit", async () => {
     expect((await fetch(new URL("/quit", server.url), { method: "POST" })).status).toBe(204);
     await Promise.race([server.closed, new Promise((_, reject) => setTimeout(() => reject(new Error("still up")), 2000))]);
