@@ -1,0 +1,14 @@
+/* Size as three numbers: a bar proportioned by kind, then the counts. */
+.delta { display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; }
+.bar { display: flex; height: 4px; border-radius: 2px; overflow: hidden; background: var(--panel-2); min-width: 6rem; }
+.core { --kind-color: var(--accent); }
+.test { --kind-color: var(--tok-num); }
+.boilerplate, .unclassified { --kind-color: var(--ink-faint); }
+.seg { display: block; height: 100%; background: var(--kind-color); }
+/* The legend's size is the page's to set: a card reads it a touch larger than a slice panel does. */
+.text { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: baseline; font-size: var(--delta-text, 0.68rem); font-variant-numeric: tabular-nums; color: var(--ink-soft); }
+.kind { font-weight: 600; }
+.kind::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 0.3rem; vertical-align: 1px; background: var(--kind-color); }
+.plus { color: var(--add-edge); }
+.minus { color: var(--del-edge); margin-left: 0.25rem; }
+.sep { color: var(--ink-faint); }

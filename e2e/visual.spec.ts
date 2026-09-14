@@ -13,11 +13,16 @@ async function theme(page: Page, choice: "light" | "dark"): Promise<void> {
   }, choice);
 }
 
-/** The index, settled: four cards, the failed one showing its reason. */
+/**
+ * The index, settled: four cards, the failed one showing its reason. The
+ * hooks are data attributes and roles, so the same specs run against the
+ * server-rendered page and the client app.
+ */
+const cards = (page: Page) => page.locator("[data-key][data-state]");
 async function openIndex(page: Page): Promise<void> {
   await page.goto("/");
-  await expect(page.locator(".row")).toHaveCount(4);
-  await expect(page.locator(".row.failed .why")).toContainText("GITHUB_TOKEN");
+  await expect(cards(page)).toHaveCount(4);
+  await expect(page.locator('[data-state="failed"] [data-why]')).toContainText("GITHUB_TOKEN");
 }
 
 test.describe("index", () => {
@@ -37,11 +42,11 @@ test.describe("index", () => {
     await theme(page, "light");
     await openIndex(page);
     await page.getByRole("tab", { name: /My PRs/ }).click();
-    await expect(page.locator(".row:visible")).toHaveCount(2);
+    await expect(cards(page).locator("visible=true")).toHaveCount(2);
     await expect(page).toHaveScreenshot("index-my-prs.png", { fullPage: true });
     await page.getByRole("tab", { name: /For review/ }).click();
     await page.getByLabel("Hide approved PRs").check();
-    await expect(page.locator(".row:visible")).toHaveCount(1);
+    await expect(cards(page).locator("visible=true")).toHaveCount(1);
     await expect(page).toHaveScreenshot("index-hide-approved.png", { fullPage: true });
   });
 
@@ -49,8 +54,8 @@ test.describe("index", () => {
     await theme(page, "light");
     await openIndex(page);
     await page.getByRole("button", { name: "Add a PR by URL" }).click();
-    await expect(page.locator(".chrome .add-form")).toBeVisible();
-    await expect(page.locator(".chrome")).toHaveScreenshot("chrome-add-open.png");
+    await expect(page.getByRole("form", { name: "Add a PR by URL" })).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Deep Review" })).toHaveScreenshot("chrome-add-open.png");
   });
 });
 

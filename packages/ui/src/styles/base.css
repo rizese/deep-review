@@ -1,0 +1,27 @@
+/* The page under everything: the pool behind, grain over it, thin
+   scrollbars, and the type. Pages lay their own content out. */
+html { min-height: 100%; background: var(--pool) fixed; }
+body {
+  margin: 0; padding: 0; position: relative; background: transparent; color: var(--ink);
+  font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased;
+}
+/* The grain sits over the gradient and under the page, fixed so scrolling
+   does not turn it into a moving texture. */
+body::before {
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background: url("../assets/grain.svg") repeat; background-size: 180px 180px;
+  opacity: var(--grain, 0.55);
+}
+* { scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; }
+*:hover { scrollbar-color: var(--scroll-thumb-hover) transparent; }
+code { font-family: var(--mono); font-size: 0.9em; }
+button, input { font: inherit; }
+/* Moving between pages is a real navigation; the bar morphs across it. */
+@view-transition { navigation: auto; }
+::view-transition { pointer-events: none; }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: 0.22s; }
+::view-transition-group(chrome-brand), ::view-transition-group(chrome-tools), ::view-transition-group(chrome-theme) {
+  animation-duration: 0.32s; animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+}
+/* Compact: over a PR the bar gives the height back to the code. */
+.compact { --chrome-h: 2.5rem; }

@@ -101,7 +101,7 @@ Run from the repo root:
 
 | Command          | What it does                           |
 | ---------------- | -------------------------------------- |
-| `pnpm build`     | Build every package                    |
+| `pnpm build`     | Build the client app and the CLI (the server serves `packages/ui/dist` when it exists) |
 | `pnpm typecheck` | Type-check every package               |
 | `pnpm test`      | Run all tests (Vitest)                 |
 | `pnpm e2e`       | Compare the pages against their visual baselines (Playwright, Chromium) |

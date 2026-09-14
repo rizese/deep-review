@@ -129,13 +129,13 @@ function row(pr: PrView): string {
   const heading = `<a class="title" href="${esc(pr.path)}">${esc(pr.title ?? pr.key)}</a>`;
   const last = pr.state === "building" ? (pr.log[pr.log.length - 1] ?? "") : "";
   const f = facts(pr);
-  return `<div class="row ${pr.state}" data-key="${esc(pr.key)}" data-path="${esc(pr.path)}" data-role="${esc(pr.role)}" data-approved="${pr.approved ? "true" : "false"}">
+  return `<div class="row ${pr.state}" data-key="${esc(pr.key)}" data-state="${pr.state}" data-path="${esc(pr.path)}" data-role="${esc(pr.role)}" data-approved="${pr.approved ? "true" : "false"}">
   <div>
     <div class="name">${esc(pr.key)}${pr.author ? ` · ${esc(pr.author)}` : ""}</div>
     ${heading}
     ${f ? `<div class="facts">${esc(f)}</div>` : ""}
     ${size(pr)}
-    ${pr.error ? `<div class="why">${esc(pr.error)}</div>` : ""}
+    ${pr.error ? `<div class="why" data-why>${esc(pr.error)}</div>` : ""}
     ${pr.failure ? `<div class="next">${esc(failureNote(pr))}</div>` : ""}
     ${last ? `<div class="last">${esc(last)}</div>` : ""}
   </div>

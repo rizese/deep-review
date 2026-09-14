@@ -7,6 +7,7 @@
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 import { repoWorkRoot, type PrRef } from "@deep-review/pr";
 
 export function stateDir(): string {
@@ -40,6 +41,16 @@ export function workRoot(): string {
  */
 export function repoWorkDir(ref: Pick<PrRef, "owner" | "repo">): string {
   return repoWorkRoot(workRoot(), ref);
+}
+
+/**
+ * The client app's build, beside this package in the checkout: from src/ in
+ * development and from dist/ when the CLI is built, the same two levels up.
+ * Set DEEP_REVIEW_UI=classic to ignore it and get the server's own pages.
+ */
+export function uiDist(): string | null {
+  if (process.env.DEEP_REVIEW_UI === "classic") return null;
+  return fileURLToPath(new URL("../../ui/dist/", import.meta.url));
 }
 
 /** The layout before per-repo roots: `work/<owner>-<repo>-pr<n>`, one clone each. */

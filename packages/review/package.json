@@ -16,5 +16,8 @@
     "@deep-review/call-graph": "workspace:*",
     "@deep-review/pr": "workspace:*",
     "@deep-review/slicer": "workspace:*"
+  },
+  "exports": {
+    "./api": "./src/api.ts"
   }
 }

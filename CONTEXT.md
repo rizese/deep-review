@@ -137,6 +137,15 @@ re-rendered on restart). Clones and worktrees live under `work/<owner>/<repo>`:
 one clone per repo, one worktree per commit, released when the last PR that
 needs them is retired.
 
+**Client app**:
+The React + Vite app in `packages/ui` that renders the pages in the browser
+from the server's JSON (`/prs`, `/events`, `/prs/<key>/input`). The server
+serves its build (`packages/ui/dist`) at `/` when present, and its own
+rendered pages otherwise (or when `DEEP_REVIEW_UI=classic`). Styles are CSS
+modules over one token file; the visual baselines under `e2e/` are the
+acceptance test that a page ported to it looks as it did.
+_Avoid_: frontend, web app (the deleted `apps/web` scaffold was called that)
+
 **Chrome**:
 The frame every page sits in: the pool — a light-blue (or, at night, deep-blue)
 grainy gradient behind everything — and one full-width glass bar along the

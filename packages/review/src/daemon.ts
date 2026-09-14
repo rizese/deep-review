@@ -17,7 +17,7 @@ import process from "node:process";
 import { renderSliceExplorerHtml } from "@deep-review/call-graph";
 import { fetchPrInfo, releaseCheckouts, removeRepoWorkDir } from "@deep-review/pr";
 import { forkBuild } from "./buildFork.js";
-import { LEGACY_WORK_DIR, legacyWorkDirOf, lockFile, logFile, prsDir, repoWorkDir, stateDir, workRoot } from "./paths.js";
+import { LEGACY_WORK_DIR, legacyWorkDirOf, lockFile, logFile, prsDir, repoWorkDir, stateDir, uiDist, workRoot } from "./paths.js";
 import type { AddOptions, CheckoutRef, PrFacts, PrKey, PrRef, PrView } from "./registry.js";
 import { startNavServer, VERSION, type NavServer } from "./serve.js";
 import { fileStore } from "./store.js";
@@ -184,6 +184,7 @@ export async function runDaemon(options: RunDaemonOptions = {}): Promise<NavServ
         render: ({ input }) => renderSliceExplorerHtml(input),
       },
       onRemoved: (removed, remaining) => retireCheckouts(removed, remaining, options.onProgress ?? (() => {})),
+      ...(uiDist() ? { uiDir: uiDist()! } : {}),
       port,
       ...(options.concurrency !== undefined ? { concurrency: options.concurrency } : {}),
       ...(options.onProgress ? { onProgress: options.onProgress } : {}),

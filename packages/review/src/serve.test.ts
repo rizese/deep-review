@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { renderSliceExplorerHtml, type SliceExplorerInput } from "@deep-review/call-graph";
@@ -131,6 +131,30 @@ describe("navigation server", () => {
     expect((await patch("a/b#2", { approved: true })).status).toBe(404);
     // Back the way the other tests expect it.
     expect((await patch("a/b#1", { approved: false, approvers: [], role: "review" })).status).toBe(200);
+  });
+
+  it("serves the client app at / and its assets when a build is present, its own index otherwise", async () => {
+    const uiDir = mkdtempSync(path.join(os.tmpdir(), "ui-dist-"));
+    writeFileSync(path.join(uiDir, "index.html"), "<!doctype html><title>Deep Review</title><div id=root></div>");
+    mkdirSync(path.join(uiDir, "assets"));
+    writeFileSync(path.join(uiDir, "assets", "index-abc.js"), "console.log(1)");
+    const withApp = await startNavServer({ build: () => Promise.reject(new Error("unused")), uiDir });
+    try {
+      const page = await fetch(withApp.url);
+      expect(page.headers.get("content-type")).toMatch(/text\/html/);
+      expect(await page.text()).toContain('<div id=root>');
+      const asset = await fetch(new URL("/assets/index-abc.js", withApp.url));
+      expect(asset.status).toBe(200);
+      expect(asset.headers.get("content-type")).toMatch(/javascript/);
+      expect(asset.headers.get("cache-control")).toMatch(/immutable/);
+      expect((await fetch(new URL("/assets/../index.html", withApp.url))).status).toBe(404);
+      expect((await fetch(new URL("/assets/nope.js", withApp.url))).status).toBe(404);
+    } finally {
+      await withApp.close();
+      rmSync(uiDir, { recursive: true, force: true });
+    }
+    // This suite's server has no build: the rendered index, as before.
+    expect(await (await fetch(server.url)).text()).toContain('class="rows"');
   });
 
   it("serves a ready PR's input as JSON, and says when there is none", async () => {

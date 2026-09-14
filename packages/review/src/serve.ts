@@ -12,6 +12,8 @@
  */
 
 import { createRequire } from "node:module";
+import { existsSync, readFileSync } from "node:fs";
+import nodePath from "node:path";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import process from "node:process";
 import type { AddressInfo } from "node:net";
@@ -67,6 +69,12 @@ export interface NavServerOptions {
   onRemoved?: RegistryOptions["onRemoved"];
   /** When failed builds are retried; see `RegistryOptions.retry`. */
   retry?: RegistryOptions["retry"];
+  /**
+   * The built client app (packages/ui/dist). When present, its index.html
+   * is served at `/` and its assets under `/assets/`; the server's own
+   * rendered index is the fallback for a checkout with no build.
+   */
+  uiDir?: string | undefined;
 }
 
 export interface NavServer {
@@ -97,6 +105,31 @@ function sendText(res: ServerResponse, status: number, type: string, body: strin
 
 function sendHtml(res: ServerResponse, status: number, html: string): void {
   sendText(res, status, "text/html; charset=utf-8", html);
+}
+
+const ASSET_TYPES: Record<string, string> = {
+  ".js": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".map": "application/json; charset=utf-8",
+  ".png": "image/png",
+  ".svg": "image/svg+xml",
+  ".woff2": "font/woff2",
+  ".ico": "image/x-icon",
+};
+
+/** The client app's files, if a build is there: index.html for `/`, hashed assets under `/assets/`. */
+function clientApp(uiDir: string | undefined): { index: () => string | null; asset: (name: string) => { body: Buffer; type: string } | null } {
+  const indexFile = uiDir ? nodePath.join(uiDir, "index.html") : null;
+  return {
+    index: () => (indexFile && existsSync(indexFile) ? readFileSync(indexFile, "utf8") : null),
+    asset: (name) => {
+      if (!uiDir || name.includes("..") || name.includes("/")) return null;
+      const file = nodePath.join(uiDir, "assets", name);
+      if (!existsSync(file)) return null;
+      const type = ASSET_TYPES[nodePath.extname(name)];
+      return type ? { body: readFileSync(file), type } : null;
+    },
+  };
 }
 
 function intParam(url: URL, name: string): number | null {
@@ -163,6 +196,8 @@ export async function startNavServer(options: NavServerOptions): Promise<NavServ
     ...(options.retry !== undefined ? { retry: options.retry } : {}),
     onProgress: log,
   });
+
+  const app = clientApp(options.uiDir);
 
   let resolveClosed: () => void = () => {};
   const closed = new Promise<void>((resolve) => {
@@ -440,7 +475,20 @@ export async function startNavServer(options: NavServerOptions): Promise<NavServ
       return;
     }
     if (path === "/") {
-      sendHtml(res, 200, renderIndexPage(registry.list()));
+      const page = app.index();
+      if (page) sendHtml(res, 200, page);
+      else sendHtml(res, 200, renderIndexPage(registry.list()));
+      return;
+    }
+    if (path.startsWith("/assets/")) {
+      const asset = app.asset(path.slice("/assets/".length));
+      if (!asset) {
+        sendText(res, 404, "text/plain", "not found");
+        return;
+      }
+      // Hashed names: safe to cache for as long as the browser likes.
+      res.writeHead(200, { "Content-Type": asset.type, "Cache-Control": "public, max-age=31536000, immutable" });
+      res.end(asset.body);
       return;
     }
     if (path === "/favicon.ico") {

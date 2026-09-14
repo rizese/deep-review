@@ -172,7 +172,7 @@ export function renderChrome(options: ChromeOptions = {}): string {
       <svg class="ic-plus" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5v11M2.5 8h11"/></svg>
       <svg class="ic-close" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>
     </button>
-    <form class="add-form" hidden>
+    <form class="add-form" aria-label="Add a PR by URL" hidden>
       <input type="url" name="url" placeholder="https://github.com/owner/repo/pull/123" aria-label="PR URL" required>
       <span class="add-note"></span>
     </form>
