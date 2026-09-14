@@ -16,7 +16,7 @@ function crumbFor(symbols: readonly SymbolRange[], line: number): string {
 /**
  * The GitHub-style expander standing in for hidden lines: ▲ reveals the
  * gap's bottom, ▼ its top, ↕ the whole of a short one. A port of `gapRow`
- * and the click half of `GAP_JS`.
+ * and the click half of `the page's former gap script`.
  */
 export function Gap({
   entry,

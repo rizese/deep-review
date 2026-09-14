@@ -1,6 +1,6 @@
 /**
  * A stand-in for buildWorker.ts under test: answers a build request with
- * progress lines and either a tiny built page, a typed error, or a crash,
+ * progress lines and either a tiny build, a typed error, or a crash,
  * depending on the PR URL it is asked about.
  */
 import process from "node:process";
@@ -22,16 +22,15 @@ process.once("message", (raw: unknown) => {
     lastWord(serializeError(new ConfigError("no token for you")), 1);
     return;
   }
-  // A real page is megabytes; a worker that exits before the pipe drains
-  // loses it, so the fake can be asked for one that size.
-  const html = prUrl.includes("/big/") ? `<html>${"x".repeat(6 * 1024 * 1024)}</html>` : `<html>${navBase}</html>`;
+  // A real build's input is megabytes; a worker that exits before the pipe
+  // drains loses it, so the fake can be asked for one that size.
+  const overview = prUrl.includes("/big/") ? "x".repeat(6 * 1024 * 1024) : navBase;
   lastWord(
     {
       type: "done",
       built: {
-        input: { prUrl, prTitle: "fake", repo: "a/b", number: 1, overview: "", files: [], slices: [], navBase },
+        input: { prUrl, prTitle: "fake", repo: "a/b", number: 1, overview, files: [], slices: [], navBase },
         headDir: "/tmp/nowhere",
-        html,
         headSha: "h",
         baseSha: "b",
       },

@@ -15,8 +15,8 @@
  * per PR to refill it. Ready and failed PRs are written to a `PrStore` (one
  * file per PR; see store.ts) as they change, and read back when the
  * registry is made, so a restart resumes with the same pages and no builds.
- * The page itself is not stored: it is re-rendered from the input, so a new
- * version of the renderer shows on old PRs too.
+ * What is stored is a build's input; the page is the client app's to render
+ * from it, so a new version of the app shows on old PRs too.
  */
 
 import { existsSync } from "node:fs";
@@ -28,7 +28,7 @@ import {
   type SliceExplorerInput,
 } from "@deep-review/call-graph";
 import { failureKindOf, prUrl, type FailureKind, type PrRef, type PrRole } from "@deep-review/pr";
-import type { PrStore, StoredBuild, StoredPr } from "./store.js";
+import type { PrStore, StoredPr } from "./store.js";
 
 export type { PrRef, PrRole } from "@deep-review/pr";
 
@@ -195,7 +195,6 @@ export interface BuiltPr {
   input: SliceExplorerInput;
   /** The PR's head checkout, which the language services read. */
   headDir: string;
-  html: string;
   /** The head commit this build was made from; a moved head means a stale build. */
   headSha?: string | undefined;
   /** The merge-base commit the base checkout is at; with headSha, the two worktrees this build keeps alive. */
@@ -243,12 +242,11 @@ export interface RegistryOptions {
   logLimit?: number | undefined;
   onProgress?: ((message: string) => void) | undefined;
   /**
-   * Where PRs are remembered between runs, and how to get a page back from
-   * what was stored: the store keeps a build's input, not its HTML, so each
-   * restored PR is rendered afresh — in this version's chrome, whatever
-   * version wrote it. Absent, the registry forgets everything on exit.
+   * Where PRs are remembered between runs: the store keeps a build's input,
+   * which is all the client app needs to render the page afresh. Absent, the
+   * registry forgets everything on exit.
    */
-  persistence?: { store: PrStore; render: (built: StoredBuild) => string } | undefined;
+  persistence?: { store: PrStore } | undefined;
   /**
    * Called after a PR is dropped, with what it held on disk and what every
    * PR still here holds, so its checkouts can be released without taking a
@@ -339,7 +337,7 @@ export class PrRegistry {
   private readonly sessionIdleMs: number;
   private readonly logLimit: number;
   private readonly log: (message: string) => void;
-  private readonly persistence: { store: PrStore; render: (built: StoredBuild) => string } | null;
+  private readonly persistence: { store: PrStore } | null;
   private readonly onRemoved: ((removed: CheckoutRef, remaining: CheckoutRef[]) => void) | null;
   private readonly retry: RetryPolicy;
   private readonly listeners = new Set<(event: RegistryEvent) => void>();
@@ -523,11 +521,6 @@ export class PrRegistry {
   /** Every held PR's checkouts, for whoever keeps the work directory tidy. */
   checkouts(): CheckoutRef[] {
     return [...this.entries.values()].map(checkoutOf);
-  }
-
-  /** The rendered page, or null while the PR is not ready. */
-  html(key: PrKey): string | null {
-    return this.entries.get(key)?.built?.html ?? null;
   }
 
   /**
@@ -724,9 +717,8 @@ export class PrRegistry {
 
   /**
    * Take the stored PRs as this run's, straight into the table: no queue, no
-   * build. A ready PR's page is rendered now from its stored input; one
-   * whose render throws is skipped with a note, since a PR with no page is
-   * not ready. A failed PR comes back failed, with its reason, so it can be
+   * build. A ready PR comes back ready, with the input the client app renders
+   * it from. A failed PR comes back failed, with its reason, so it can be
    * retried rather than forgotten. Checkouts are not checked here — a page
    * needs none, and the first click that does finds out (sessionFor).
    */
@@ -747,19 +739,12 @@ export class PrRegistry {
         lastUsed: Date.now(),
       };
       if (stored.state === "ready" && stored.built) {
-        let html: string;
-        try {
-          html = this.persistence.render(stored.built);
-        } catch (error) {
-          this.log(`${key}: could not render the stored build — ${error instanceof Error ? error.message : String(error)}; skipped.`);
-          continue;
-        }
         this.entries.set(key, {
           ...base,
           state: "ready",
           readyAt: stored.readyAt ?? stored.addedAt,
           log: ["restored — built in a previous run."],
-          built: { ...stored.built, html },
+          built: { ...stored.built },
         });
       } else {
         const entry: Entry = {
@@ -797,7 +782,7 @@ export class PrRegistry {
     if (!this.persistence) return;
     let record: StoredPr;
     if (entry.state === "ready" && entry.built && entry.readyAt !== undefined) {
-      const { html: _html, ...built } = entry.built;
+      const built = entry.built;
       record = {
         version: 1,
         state: "ready",

@@ -18,7 +18,7 @@ const SLIDE_MS = 520;
 /**
  * The two axes fused: slices stacked vertically in priority order, and each
  * slice's call graph walkable horizontally from the symbols in its diff. A
- * port of `renderSliceExplorerHtml` and the client JS that came with it.
+ * port of `the former server-rendered explorer` and the client JS that came with it.
  */
 export function Explorer({ input, count }: { input: SliceExplorerInput; count: number }): JSX.Element {
   const [current, setCurrent] = useState(0);

@@ -14,7 +14,6 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import { renderSliceExplorerHtml } from "@deep-review/call-graph";
 import { fetchPrInfo, releaseCheckouts, removeRepoWorkDir } from "@deep-review/pr";
 import { forkBuild } from "./buildFork.js";
 import { LEGACY_WORK_DIR, legacyWorkDirOf, lockFile, logFile, prsDir, repoWorkDir, stateDir, uiDist, workRoot } from "./paths.js";
@@ -180,11 +179,9 @@ export async function runDaemon(options: RunDaemonOptions = {}): Promise<NavServ
           legacyFile: path.join(stateDir(), "registry.json"),
           ...(options.onProgress ? { onProblem: options.onProgress } : {}),
         }),
-        // Stored builds come back in this version's chrome.
-        render: ({ input }) => renderSliceExplorerHtml(input),
       },
       onRemoved: (removed, remaining) => retireCheckouts(removed, remaining, options.onProgress ?? (() => {})),
-      ...(uiDist() ? { uiDir: uiDist()! } : {}),
+      uiDir: uiDist(),
       port,
       ...(options.concurrency !== undefined ? { concurrency: options.concurrency } : {}),
       ...(options.onProgress ? { onProgress: options.onProgress } : {}),

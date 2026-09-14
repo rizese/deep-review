@@ -1,10 +1,10 @@
 /**
  * The one way a panel shows code: a sticky scope header over a unified diff.
- * Function panels, definition panels, and the slice panel's file blocks all
- * render through here, so a pane looks and behaves the same wherever it sits
- * — the header names the file and the declaration the first visible line is
- * in (kept in step with scrolling by `SCOPE_JS`), and the body is the diff
- * rows the caller built with `diffView`.
+ * Every panel the navigation server renders goes through here, so a pane
+ * looks the same wherever it sits — the header names the file and the
+ * declaration the first visible line is in (the client app keeps it in step
+ * with scrolling), and the body is the diff rows the caller built with
+ * `diffView`.
  */
 
 import {
@@ -83,8 +83,8 @@ export function renderCodePane(input: CodePaneInput): string {
   // column alignment are meaningful, so it keeps its horizontal scroll.
   const wrap = MARKDOWN_FILE.test(file);
   const preAttrs = wrap ? ` data-w="${width}" style="--gutter:${width}"` : ` data-w="${width}"`;
-  // The caret leads, as GitHub's does; the whole bar is the toggle (SCOPE_JS)
-  // and the pane folds by transition, so the caret only says which way.
+  // The caret leads, as GitHub's does; the whole bar is the toggle, and the
+  // pane folds by transition, so the caret only says which way.
   return `<div class="code-pane"${paneAttrs}><div class="scope-bar"${entry ? ` data-key="${esc(entry.key)}"` : ""} aria-expanded="true">${SCOPE_CARET}<span class="scope-path">${pathHtml(
     file,
   )}</span><span class="scope-sym">${label}</span>${statHtml(rows)}</div><pre class="source${wrap ? " wrap" : ""}"${preAttrs}><span class="lines">${body}</span></pre></div>`;

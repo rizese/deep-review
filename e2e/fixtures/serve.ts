@@ -8,7 +8,6 @@
 import { mkdtempSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { renderSliceExplorerHtml } from "../../packages/call-graph/src/index.js";
 import { ConfigError } from "../../packages/pr/src/index.js";
 import type { BuildPr } from "../../packages/review/src/registry.js";
 import { startNavServer } from "../../packages/review/src/serve.js";
@@ -32,12 +31,12 @@ const build: BuildPr = ({ prUrl, navBase }, log) => {
   }
   if (number === 4) return Promise.reject(new ConfigError("GITHUB_TOKEN is not set; it is needed to find your PRs."));
   const input = fixtureInput(number, navBase);
-  return Promise.resolve({ input, headDir, html: renderSliceExplorerHtml(input), headSha: "b".repeat(40), baseSha: "a".repeat(40) });
+  return Promise.resolve({ input, headDir, headSha: "b".repeat(40), baseSha: "a".repeat(40) });
 };
 
-// The client build beside this checkout, unless E2E_UI=classic asks for the server's own pages.
-const uiDir = process.env.E2E_UI === "classic" ? undefined : fileURLToPath(new URL("../../packages/ui/dist/", import.meta.url));
-const server = await startNavServer({ build, port: PORT, ...(uiDir ? { uiDir } : {}), retry: { transientDelaysMs: [3_600_000], buildRetries: 0, buildDelayMs: 3_600_000, transientMaxMs: 3_600_000 } });
+// The client build beside this checkout: the pages are its to render.
+const uiDir = fileURLToPath(new URL("../../packages/ui/dist/", import.meta.url));
+const server = await startNavServer({ build, port: PORT, uiDir, retry: { transientDelaysMs: [3_600_000], buildRetries: 0, buildDelayMs: 3_600_000, transientMaxMs: 3_600_000 } });
 const ref = (number: number) => ({ owner: "acme", repo: "widgets", number });
 server.add(ref(1), {}, { role: "review", author: "sam", approved: true, approvers: ["alex"], headSha: "b".repeat(40) });
 server.add(ref(2), {}, { role: "authored", author: "me", draft: true, approved: false });

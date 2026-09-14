@@ -1,12 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { SCOPE_CARET } from "./codePane.js";
-import {
-  EXPLORER_CSS,
-  EXPLORER_NAV_JS,
-  renderDefinitionPanel,
-  renderPanel,
-} from "./explorer.js";
-import { buildFileIndex, SCOPE_JS } from "./html.js";
+import { renderDefinitionPanel, renderPanel } from "./explorer.js";
+import { buildFileIndex } from "./html.js";
 import type { CallPathResult, DefinitionTarget, FunctionSnapshot, PathNode } from "./types.js";
 
 function snapshot(file: string, lines: string[]): FunctionSnapshot {
@@ -308,26 +303,6 @@ describe("sticky scope header", () => {
   it("shows the path alone when the file is not embedded", () => {
     const midPanel = html.slice(html.lastIndexOf('data-node="mid.ts#mid"'), html.lastIndexOf('data-node="leaf.ts#leaf"'));
     expect(midPanel).toContain(`<div class="scope-bar" aria-expanded="true">${SCOPE_CARET}<span class="scope-path"><span class="name">mid.ts</span></span><span class="scope-sym"></span>`);
-  });
-
-  it("is followed as the pane scrolls", () => {
-    expect(SCOPE_JS).toContain("firstVisibleLine");
-    expect(SCOPE_JS).toContain('addEventListener("scroll"');
-  });
-});
-
-describe("the explorer's navigation script", () => {
-  it("keeps one live element per panel, so a revisited panel comes back as the reader left it", () => {
-    // The defs are templates cloned once; after that the same element returns.
-    expect(EXPLORER_NAV_JS).toContain("var live = Object.create(null)");
-    expect(EXPLORER_NAV_JS).toContain("keep(id, def.cloneNode(true))");
-    expect(EXPLORER_NAV_JS).toContain("kept.parentNode === track && !rebuilding ? kept.cloneNode(true) : kept");
-  });
-
-  it("includes the clicked-symbol linking styles and behavior", () => {
-    expect(EXPLORER_CSS).toContain(".sym-link");
-    expect(EXPLORER_CSS).toContain(".sym-link.sym-dim");
-    expect(EXPLORER_NAV_JS).toContain("linkSymbols");
   });
 });
 

@@ -1,6 +1,6 @@
 /**
  * Every question the explorer asks the navigation server, and what it
- * remembers of the answers. A port of the fetch half of EXPLORER_NAV_JS:
+ * remembers of the answers. A port of the fetch half of the page's former explorer nav script:
  * where a symbol is defined (`/definition`), who calls it (`/references`),
  * what a definition's panel looks like (`/panel`) — each asked once, the
  * first time a reader wants it, and resolved against the prefix this PR is

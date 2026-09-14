@@ -11,7 +11,7 @@ const THRESHOLD = 550;
  * The vertical axis: slices stacked, one filling the stage at a time.
  * Scrolling inside a slice behaves normally until it runs out of content;
  * pushing past the end carries the reader to the next slice, and past the
- * top to the previous one. A port of `DECK_JS`.
+ * top to the previous one. A port of `the page's former deck script`.
  */
 export function Deck({
   current,

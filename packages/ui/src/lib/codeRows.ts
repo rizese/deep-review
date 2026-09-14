@@ -63,7 +63,7 @@ function pinRows(rows: readonly DiffRow[], entry: FileEntry, pinned: (n: number)
 
 /**
  * One line of an embedded file as the expander reveals it: the file's own
- * base rendering, no decoration — the same string `GAP_JS` inserts.
+ * base rendering, no decoration — the same string `the page's former gap script` inserts.
  */
 export function revealedRow(entry: FileEntry, n: number, width: number): Extract<PaneRow, { kind: "line" }> {
   return { kind: "line", key: `r${n}`, cls: "line", html: rowInner(n, width, fileLineHtml(entry, n)) };

@@ -46,10 +46,10 @@ export function repoWorkDir(ref: Pick<PrRef, "owner" | "repo">): string {
 /**
  * The client app's build, beside this package in the checkout: from src/ in
  * development and from dist/ when the CLI is built, the same two levels up.
- * Set DEEP_REVIEW_UI=classic to ignore it and get the server's own pages.
+ * The path is where a build would be, built or not; the server says so when
+ * it is not there.
  */
-export function uiDist(): string | null {
-  if (process.env.DEEP_REVIEW_UI === "classic") return null;
+export function uiDist(): string {
   return fileURLToPath(new URL("../../ui/dist/", import.meta.url));
 }
 

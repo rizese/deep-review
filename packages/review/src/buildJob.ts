@@ -1,6 +1,6 @@
 /**
- * The build itself: slice the PR, walk each slice's call graph, render the
- * page under the prefix the server will mount it at. This is the work the
+ * The build itself: slice the PR and walk each slice's call graph, under
+ * the prefix the server will mount it at. This is the work the
  * server hands to a child process (see buildFork.ts) — a clone and a
  * language-service run take minutes of CPU, and on the server's own event
  * loop they made it deaf for that long.
@@ -14,7 +14,6 @@
 
 import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
-import { renderSliceExplorerHtml } from "@deep-review/call-graph";
 import { fetchPrInfo, parsePrUrl } from "@deep-review/pr";
 import { loadSliceReport, slicePr, writeSliceReport } from "@deep-review/slicer";
 import { explorerInputFromReport } from "./build.js";
@@ -68,7 +67,6 @@ export const runBuild: BuildPr = async ({ prUrl, navBase, options }, log): Promi
   return {
     input,
     headDir: built.headDir,
-    html: renderSliceExplorerHtml(input),
     headSha: built.report.pr.headSha,
     baseSha: built.report.pr.mergeBaseSha,
   };

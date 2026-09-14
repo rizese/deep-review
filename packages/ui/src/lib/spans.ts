@@ -1,6 +1,6 @@
 /**
  * Turning a span in a rendered pane into a position the navigation server
- * understands, and back again. A port of the DOM half of EXPLORER_NAV_JS:
+ * understands, and back again. A port of the DOM half of the page's former explorer nav script:
  * `columnOf`, `positionOf`, `spanAt` and `resolveSpan`.
  */
 import { definitionAt, defNames } from "./nav.js";

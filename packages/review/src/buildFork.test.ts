@@ -12,15 +12,14 @@ describe("forkBuild", () => {
     const log: string[] = [];
     const built = await build(request("https://github.com/a/b/pull/1"), (m) => log.push(m));
     expect(log).toEqual(["first", "second"]);
-    expect(built.html).toBe("<html>/pr/a/b/1/</html>");
+    expect(built.input.overview).toBe("/pr/a/b/1/");
     expect(built.input.navBase).toBe("/pr/a/b/1/");
     expect([built.headSha, built.baseSha]).toEqual(["h", "b"]);
   });
 
-  it("delivers a page of real size whole, even though the child exits right after sending it", async () => {
+  it("delivers a build of real size whole, even though the child exits right after sending it", async () => {
     const built = await build(request("https://github.com/a/big/pull/1"), () => {});
-    expect(built.html.length).toBeGreaterThan(6 * 1024 * 1024);
-    expect(built.html.endsWith("</html>")).toBe(true);
+    expect(built.input.overview.length).toBe(6 * 1024 * 1024);
   }, 20_000);
 
   it("brings an error back with its kind intact, so the parent can classify it as the child did", async () => {

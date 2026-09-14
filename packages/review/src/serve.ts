@@ -1,9 +1,9 @@
 /**
- * The local navigation server behind rendered explorer pages: serves an
- * index of every PR it holds, each PR's page under its own prefix, and
- * answers those pages' questions about symbols — where one is defined, who
- * calls it, what its panel looks like — from language services kept warm
- * over that PR's head checkout.
+ * The local navigation server behind the client app: serves the app itself
+ * at `/` and under each PR's own prefix, the registry and each PR's build
+ * input as JSON, and answers the app's questions about symbols — where one
+ * is defined, who calls it, what its panel looks like — from language
+ * services kept warm over that PR's head checkout.
  *
  * Loopback only, and long-lived: one server holds however many PRs you are
  * reading, PRs are added to a running one from any terminal, and a page
@@ -18,7 +18,6 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import process from "node:process";
 import type { AddressInfo } from "node:net";
 import { escapeHtml as esc } from "@deep-review/call-graph";
-import { renderBuildingPage, renderIndexPage } from "./indexPage.js";
 import {
   parsePrPath,
   PrRegistry,
@@ -70,9 +69,10 @@ export interface NavServerOptions {
   /** When failed builds are retried; see `RegistryOptions.retry`. */
   retry?: RegistryOptions["retry"];
   /**
-   * The built client app (packages/ui/dist). When present, its index.html
-   * is served at `/` and its assets under `/assets/`; the server's own
-   * rendered index is the fallback for a checkout with no build.
+   * The built client app (packages/ui/dist): its index.html is every page
+   * this server serves, and its assets go under `/assets/`. Without a build
+   * there — the directory missing, or `pnpm build` never run — every page
+   * answers 503 saying so.
    */
   uiDir?: string | undefined;
 }
@@ -198,6 +198,17 @@ export async function startNavServer(options: NavServerOptions): Promise<NavServ
   });
 
   const app = clientApp(options.uiDir);
+
+  /**
+   * Every page this server serves is the client app's index.html. Without a
+   * build it can only say so: 503, since the server is up and the page it
+   * would serve is simply not there yet.
+   */
+  const sendApp = (res: ServerResponse): void => {
+    const page = app.index();
+    if (page) sendHtml(res, 200, page);
+    else sendHtml(res, 503, NOT_BUILT);
+  };
 
   let resolveClosed: () => void = () => {};
   const closed = new Promise<void>((resolve) => {
@@ -459,23 +470,10 @@ export async function startNavServer(options: NavServerOptions): Promise<NavServ
         return;
       }
       if (route.rest === "/") {
-        // With a client build here, a PR's page is that app: it reads the
-        // registry's stream and this PR's input and renders both the
-        // explorer and the placeholder itself. Every question below this
-        // line is still answered the same way.
-        const page = app.index();
-        if (page) {
-          sendHtml(res, 200, page);
-          return;
-        }
-        const html = registry.html(route.key);
-        if (html) {
-          registry.pageAlive(route.key);
-          sendHtml(res, 200, html);
-        } else {
-          // Not built yet (or the build failed): a page that watches for it.
-          sendHtml(res, 200, renderBuildingPage(pr));
-        }
+        // A PR's page is the client app: it reads the registry's stream and
+        // this PR's input and renders the explorer or the placeholder
+        // itself. Every question below this line is answered the same way.
+        sendApp(res);
         return;
       }
       await handleNav(route.key, route.rest, url, res);
@@ -487,9 +485,7 @@ export async function startNavServer(options: NavServerOptions): Promise<NavServ
       return;
     }
     if (path === "/") {
-      const page = app.index();
-      if (page) sendHtml(res, 200, page);
-      else sendHtml(res, 200, renderIndexPage(registry.list()));
+      sendApp(res);
       return;
     }
     if (path.startsWith("/assets/")) {
@@ -540,6 +536,17 @@ export async function startNavServer(options: NavServerOptions): Promise<NavServ
     close: shutdown,
   };
 }
+
+/**
+ * What every page is when the client app has not been built: static text,
+ * nothing from the request in it, so the one thing to do about it is plain.
+ */
+const NOT_BUILT = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Deep Review — the client app is not built</title></head>
+<body><h1>The client app is not built.</h1>
+<p>Every page this server serves is the client app in <code>packages/ui</code>, and there is no build of it here.</p>
+<p>Run <code>pnpm build</code> in the checkout, then reload.</p></body></html>
+`;
 
 /** The key comes from the URL, so it is escaped: a loopback origin that also accepts POST /quit is no place for reflected markup. */
 function notHere(key: string): string {

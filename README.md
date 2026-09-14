@@ -10,6 +10,7 @@ Project vocabulary lives in [CONTEXT.md](./CONTEXT.md).
 
 ```sh
 pnpm install
+pnpm build      # the client app the server serves, and the pr-review CLI
 ```
 
 Authenticate to GitHub once. Nothing here shells out to `gh`, so the login on
@@ -90,7 +91,8 @@ there instead of being passed per invocation.
 - `packages/pr` — one PR's raw material: URL parsing, GitHub metadata, linked Linear tickets, base/head worktrees, and unified-diff parsing. Depended on by the two analysis packages below.
 - `packages/call-graph` — analyze how a function's callers/callees change across a GitHub PR, using the TypeScript language service's call hierarchy (and Pyright for Python). Also renders the explorer pages.
 - `packages/slicer` — break a PR's diff into prioritized slices with an agent.
-- `packages/review` — the two together: slices on the vertical axis, call graphs on the horizontal. Includes the `pr-review` CLI.
+- `packages/review` — the two together: slices on the vertical axis, call graphs on the horizontal. The `pr-review` CLI, the local server and its API, the watcher.
+- `packages/ui` — the client app (React + Vite, CSS modules): the index, the building placeholder and the explorer, rendered in the browser from the server's JSON. `pnpm --filter @deep-review/ui dev` runs it with hot reload against a running server.
 
 
 
@@ -101,7 +103,7 @@ Run from the repo root:
 
 | Command          | What it does                           |
 | ---------------- | -------------------------------------- |
-| `pnpm build`     | Build the client app and the CLI (the server serves `packages/ui/dist` when it exists) |
+| `pnpm build`     | Build the client app (which the server serves) and the CLI |
 | `pnpm typecheck` | Type-check every package               |
 | `pnpm test`      | Run all tests (Vitest)                 |
 | `pnpm e2e`       | Compare the pages against their visual baselines (Playwright, Chromium) |

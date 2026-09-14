@@ -15,7 +15,7 @@ export interface Trail {
  * A collapsible breadcrumb trail per slice. Every walk into a caller or
  * callee appends a step; clicking an earlier step restores the track to
  * exactly that arrangement and drops everything after it, the way browser
- * history does. Each slice keeps its own trail. A port of `HISTORY_JS`.
+ * history does. Each slice keeps its own trail. A port of `the page's former history script`.
  */
 export function History({
   slices,

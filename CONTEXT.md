@@ -138,27 +138,30 @@ one clone per repo, one worktree per commit, released when the last PR that
 needs them is retired.
 
 **Client app**:
-The React + Vite app in `packages/ui` that renders the pages in the browser
-from the server's JSON (`/prs`, `/events`, `/prs/<key>/input`). The server
-serves its build (`packages/ui/dist`) at `/` and at every PR's own prefix
-when present, and its own rendered pages otherwise (or when
-`DEEP_REVIEW_UI=classic`); a PR's symbol routes are the server's either way.
-Styles are CSS modules over one token file, except where a class name is
-itself the contract — the source lines and panels the analysis package
-renders as HTML keep their global names. The visual baselines under `e2e/`
-are the acceptance test that a page ported to it looks as it did.
-_Avoid_: frontend, web app (the deleted `apps/web` scaffold was called that)
+The React + Vite app in `packages/ui`, which renders every page in the
+browser — the index, the building placeholder, the explorer — from the
+server's JSON (`/prs`, `/events`, `/prs/<key>/input`) and the navigation
+routes (`/definition`, `/references`, `/panel` — the last still answering
+with a panel's HTML). The server serves its build (`packages/ui/dist`) at `/`
+and at every held PR's mount path; with no build it answers 503 and says to
+run `pnpm build`. Styles are CSS modules over one token file
+(`src/styles/tokens.css`); the source-line classes the server's panel HTML
+carries stay global (`src/styles/source.css`). The visual baselines under
+`e2e/` are the acceptance test that a page looks as it did.
+_Avoid_: frontend, web app (the deleted `apps/web` scaffold was called that),
+server-rendered page (there are none left)
 
 **Chrome**:
 The frame every page sits in: the pool — a light-blue (or, at night, deep-blue)
 grainy gradient behind everything — and one full-width glass bar along the
 top carrying the wordmark (the way home), the server's PR count with a `+`
-that adds a PR by URL, and the light / system / dark switch. Rendered by
-`renderChrome` in `packages/call-graph/src/chrome.ts`, included by the slice
-explorer, the index and the building page. Theme choice is `data-theme` on the root, stamped
-before first paint from localStorage; "system" is its absence.
-_Avoid_: header (the explorer's sidebar and the report pages have headers of
-their own), navbar
+that adds a PR by URL, and the light / system / dark switch. The `Chrome`
+component in `packages/ui/src/components/Chrome.tsx`; compact on a PR page
+(`.compact` on the body shrinks `--chrome-h`), and morphed across page
+navigations by the browser's cross-document view transition. Theme choice is
+`data-theme` on the root, stamped before first paint from localStorage;
+"system" is its absence.
+_Avoid_: header (the explorer's sidebar has a header of its own), navbar
 
 **PR facts**:
 What is known about a held PR from GitHub rather than from its build: its

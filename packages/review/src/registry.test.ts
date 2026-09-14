@@ -5,10 +5,7 @@ import type { SliceExplorerInput } from "@deep-review/call-graph";
 import { BuildError, ConfigError, InputError, TransientError } from "@deep-review/pr";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parsePrPath, PrRegistry, prKey, prMountPath, type BuiltPr, type PrRef } from "./registry.js";
-import { fileStore, memoryStore, type StoredBuild } from "./store.js";
-
-/** The page a stored build gets on restore: enough to tell one PR's from another's. */
-const renderStored = ({ input }: StoredBuild): string => `<html>${input.number}</html>`;
+import { fileStore, memoryStore } from "./store.js";
 
 const headDir = mkdtempSync(path.join(os.tmpdir(), "registry-test-"));
 afterAll(() => rmSync(headDir, { recursive: true, force: true }));
@@ -33,7 +30,7 @@ function built(number: number, navBase: string): BuiltPr {
     slices: [],
     navBase,
   };
-  return { input, headDir, html: `<html>${number}</html>` };
+  return { input, headDir };
 }
 
 /** A build the test controls: it finishes when told to, or fails. */
@@ -79,7 +76,6 @@ describe("PrRegistry", () => {
     await tick();
     expect(registry.get("a/b#1")?.state).toBe("ready");
     expect(registry.get("a/b#3")?.state).toBe("building");
-    expect(registry.html("a/b#1")).toBe("<html>1</html>");
     // The build was told where its page will live.
     expect(registry.get("a/b#1")?.path).toBe("/pr/a/b/1/");
     pending.get(urlOf(2))!.resolve();
@@ -214,7 +210,7 @@ describe("PrRegistry", () => {
 describe("PrRegistry persistence", () => {
   let home: string;
   let dir: string;
-  const persist = () => ({ store: fileStore(dir), render: renderStored });
+  const persist = () => ({ store: fileStore(dir) });
   beforeEach(() => {
     home = mkdtempSync(path.join(os.tmpdir(), "registry-state-"));
     dir = path.join(home, "state", "prs");
@@ -255,7 +251,7 @@ describe("PrRegistry persistence", () => {
       readyAt: before.readyAt,
       live: false,
     });
-    expect(reloaded.html("a/b#1")).toBe("<html>1</html>");
+    expect(reloaded.input("a/b#1")).toMatchObject({ prTitle: "PR 1", navBase: "/pr/a/b/1/" });
     // The PR is fully here: adding it again is the usual no-op, not a build.
     reloaded.add(ref(1));
     await reloaded.settled();
@@ -367,7 +363,6 @@ describe("PrRegistry persistence", () => {
 
     const reloaded = new PrRegistry({ build, persistence: persist() });
     expect(reloaded.get("a/b#1")).toMatchObject({ state: "ready", title: "PR 1" });
-    expect(reloaded.html("a/b#1")).toBe("<html>1</html>");
     expect(() => reloaded.sessionFor("a/b#1")).toThrow(/head checkout for a\/b#1 is gone/);
     // Nothing else changed: the entry is still here and ready, not live, and
     // the other PR is untouched.
@@ -378,45 +373,26 @@ describe("PrRegistry persistence", () => {
   });
 });
 
-describe("PrRegistry re-rendering", () => {
+describe("PrRegistry restore", () => {
   let home: string;
   beforeEach(() => {
-    home = mkdtempSync(path.join(os.tmpdir(), "registry-rerender-"));
+    home = mkdtempSync(path.join(os.tmpdir(), "registry-restore-"));
   });
   afterEach(() => rmSync(home, { recursive: true, force: true }));
   const quickBuild = ({ prUrl, navBase }: { prUrl: string; navBase: string }) =>
     Promise.resolve(built(Number(prUrl.split("/").pop()), navBase));
 
-  it("renders a restored PR's page from its stored input, and skips one it cannot render", async () => {
+  it("brings a restored PR back ready, with the input its page is rendered from", async () => {
     const store = fileStore(path.join(home, "prs"));
-    const registry = new PrRegistry({ build: quickBuild, persistence: { store, render: renderStored } });
+    const registry = new PrRegistry({ build: quickBuild, persistence: { store } });
     registry.add(ref(1));
     await registry.settled();
     registry.dispose();
 
-    // A new renderer: the stored input, this version's page.
-    const fresh = new PrRegistry({
-      build: quickBuild,
-      persistence: { store, render: ({ input }) => `<html>new chrome for ${input.prTitle}</html>` },
-    });
-    expect(fresh.html("a/b#1")).toBe("<html>new chrome for PR 1</html>");
+    const fresh = new PrRegistry({ build: quickBuild, persistence: { store } });
+    expect(fresh.get("a/b#1")).toMatchObject({ state: "ready", title: "PR 1" });
+    expect(fresh.input("a/b#1")).toMatchObject({ prTitle: "PR 1", navBase: "/pr/a/b/1/" });
     fresh.dispose();
-
-    // No page can be made: the PR is not ready, so it is not restored as ready.
-    const log: string[] = [];
-    const broken = new PrRegistry({
-      build: quickBuild,
-      onProgress: (m) => log.push(m),
-      persistence: {
-        store,
-        render: () => {
-          throw new Error("renderer down");
-        },
-      },
-    });
-    expect(broken.list()).toEqual([]);
-    expect(log.some((m) => /could not render.*renderer down/.test(m))).toBe(true);
-    broken.dispose();
   });
 });
 
@@ -504,7 +480,7 @@ describe("PrRegistry retries", () => {
 
   it("retries transient and config failures after a restart, and leaves parked ones parked", async () => {
     const store = memoryStore();
-    const persistence = { store, render: renderStored };
+    const persistence = { store };
     const first = failingBuild([new TransientError("net"), new ConfigError("key"), new InputError("big")]);
     const registry = new PrRegistry({ build: first.build, persistence, retry: { ...fast, transientDelaysMs: [60_000] } });
     registry.add(ref(1));
@@ -605,10 +581,10 @@ describe("PrRegistry checkouts", () => {
 
 describe("PrRegistry facts", () => {
   let home: string;
-  let persistence: { store: ReturnType<typeof fileStore>; render: typeof renderStored };
+  let persistence: { store: ReturnType<typeof fileStore> };
   beforeEach(() => {
     home = mkdtempSync(path.join(os.tmpdir(), "registry-facts-"));
-    persistence = { store: fileStore(path.join(home, "prs")), render: renderStored };
+    persistence = { store: fileStore(path.join(home, "prs")) };
   });
   afterEach(() => rmSync(home, { recursive: true, force: true }));
 

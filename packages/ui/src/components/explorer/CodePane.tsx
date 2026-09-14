@@ -155,7 +155,7 @@ function lineEl(entry: FileEntry, n: number, width: number): JSX.Element {
 /**
  * A small glyph in the gutter at the start of each visual row a wrapped
  * line continues onto. Wrapping depends on the pane's rendered width, so
- * the pane is watched rather than measured once. A port of `WRAP_JS`.
+ * the pane is watched rather than measured once. A port of `the page's former wrap script`.
  */
 function useWrapTicks(preRef: { current: HTMLPreElement | null }, wrap: boolean, rows: readonly PaneRow[]): void {
   useEffect(() => {

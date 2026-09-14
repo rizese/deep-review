@@ -5,7 +5,7 @@ import { scopeLabelFor, type FileEntry } from "../../lib/callGraph.js";
  * The sticky header over a code pane: the file, the declaration the first
  * visible line sits in, and what the pane changes. Anywhere on it folds the
  * pane, GitHub-style. A port of the scope bar in `codePane.ts` and of the
- * label half of `SCOPE_JS`.
+ * label half of `the page's former scope script`.
  */
 export function ScopeBar({
   file,

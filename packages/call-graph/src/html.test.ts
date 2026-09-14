@@ -1,12 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  buildFileIndex,
-  fileLineHtml,
-  GAP_JS,
-  lineRow,
-  renderDataBlob,
-  type FileIndex,
-} from "./html.js";
+import { buildFileIndex, fileLineHtml } from "./html.js";
 
 describe("buildFileIndex", () => {
   const lines = [
@@ -56,36 +49,5 @@ describe("fileLineHtml", () => {
   it("renders a line the file does not have as nothing, like the expander", () => {
     expect(fileLineHtml(entry, 0)).toBe("");
     expect(fileLineHtml(entry, 2)).toBe("");
-  });
-});
-
-describe("the expander's rows", () => {
-  // The client's row twin, run as the page runs it: the script touches the
-  // document only to read #render-data and to register its click handler.
-  function clientRows(index: FileIndex): (key: string, n: number, w: number) => string {
-    const document = {
-      getElementById: () => ({ textContent: renderDataBlob(index) }),
-      addEventListener: () => {},
-    };
-    const rd = JSON.parse(renderDataBlob(index));
-    const rowHtml = new Function("document", "window", `${GAP_JS}; return rowHtml;`)(document, {}) as (
-      file: unknown,
-      n: number,
-      w: number,
-    ) => string;
-    return (key, n, w) => rowHtml(rd.files[key], n, w);
-  }
-
-  it("are exactly the rows the server renders for the same lines", () => {
-    const lines = ["function f(a) {", "  return g(a, `multi", "  line ${a}`);", "}"];
-    const index = buildFileIndex([{ side: "after", path: "x.ts", lines, symbols: [] }]);
-    const entry = index.get("after:x.ts")!;
-    const rowFor = clientRows(index);
-    for (let n = 1; n <= lines.length; n++) {
-      expect(rowFor("after:x.ts", n, 3)).toBe(lineRow(n, 3, fileLineHtml(entry, n)));
-    }
-    // …which means the revealed rows carry the identifier spans navigation needs.
-    expect(rowFor("after:x.ts", 2, 3)).toContain('<span class="tok-fn id">g</span>');
-    expect(rowFor("after:x.ts", 3, 3)).not.toContain('class="id"');
   });
 });

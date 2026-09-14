@@ -1,55 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { SCOPE_CARET } from "./codePane.js";
 import { fileBlockRanges } from "./diffView.js";
-import { renderSliceExplorerHtml, type SliceInput } from "./sliceExplorer.js";
-import type { CallPathResult, FunctionSnapshot, PathNode } from "./types.js";
-
-function snapshot(file: string, lines: string[]): FunctionSnapshot {
-  return {
-    file,
-    startLine: 1,
-    endLine: lines.length,
-    callSites: [],
-    source: [{ startLine: 1, lines }],
-    truncated: false,
-  };
-}
-
-function node(
-  id: string,
-  name: string,
-  file: string,
-  nameLine = 1,
-): PathNode {
-  return {
-    id,
-    name,
-    file,
-    presence: "both",
-    before: null,
-    after: snapshot(file, ["function " + name + "() {", "}"]),
-    hunks: [],
-    changedInPr: false,
-    expanded: true,
-    nameLine,
-    nameColumn: 9,
-  };
-}
-
-const graph: CallPathResult = {
-  prUrl: "https://github.com/a/b/pull/1",
-  prTitle: "A PR",
-  functionName: "retry",
-  base: { ref: "main", sha: "a".repeat(40) },
-  head: { ref: "pull/1/head", sha: "b".repeat(40) },
-  rootId: "a.ts#retry",
-  nodes: [
-    node("a.ts#retry", "retry", "a.ts", 3),
-    node("a.ts#retryDelay", "retryDelay", "a.ts", 50),
-  ],
-  edges: [],
-  files: [],
-};
+import { explorerSize, fragmentSize, type SliceExplorerInput } from "./sliceExplorer.js";
 
 const fragment = {
   id: "a.ts#0@1-3",
@@ -79,178 +30,6 @@ const farFragment = {
   headEnd: 40,
 };
 
-/** The head-side text the file block needs for context and expanders. */
-const files = [
-  {
-    side: "after" as const,
-    path: "a.ts",
-    lines: Array.from({ length: 60 }, (_, i) => `line ${i + 1};`),
-    symbols: [
-      {
-        name: "Box",
-        kind: "class",
-        startLine: 1,
-        endLine: 45,
-        children: [{ name: "open", kind: "method", startLine: 30, endLine: 44 }],
-      },
-    ],
-  },
-];
-
-function render(overrides: Partial<SliceInput> = {}): string {
-  return renderSliceExplorerHtml({
-    prUrl: "https://github.com/a/b/pull/1",
-    prTitle: "A PR",
-    repo: "a/b",
-    number: 1,
-    overview: "does a thing",
-    files,
-    slices: [
-      {
-        id: "slice-1",
-        title: "First",
-        summary: "s",
-        rationale: "r",
-        target: { file: "a.ts", name: "retry" },
-        fragments: [fragment, farFragment],
-        graph,
-        ...overrides,
-      },
-      {
-        id: "slice-2",
-        title: "Second",
-        summary: "s2",
-        rationale: "r2",
-        fragments: [fragment],
-      },
-    ],
-  });
-}
-
-/** The same page for a PR that has a description, for the description view. */
-const describedHtml = renderSliceExplorerHtml({
-  prUrl: "https://github.com/a/b/pull/1",
-  prTitle: "A PR",
-  repo: "a/b",
-  number: 1,
-  overview: "does a thing",
-  prDescription: "# Why\n\nIt **hoists** `retry` out of the loop.",
-  prAuthor: "octocat",
-  files,
-  slices: [{ id: "slice-1", title: "First", summary: "s", rationale: "r", fragments: [fragment] }],
-});
-
-describe("renderSliceExplorerHtml", () => {
-  const html = render();
-
-  it("stacks one view per slice", () => {
-    expect([...html.matchAll(/class="slice-view"/g)]).toHaveLength(2);
-    expect(html).toContain('class="deck"');
-  });
-
-  it("gives each slice its own track so the two axes are independent", () => {
-    expect([...html.matchAll(/class="track"/g)]).toHaveLength(2);
-    // Per-slice defs; the page-level shared-defs is a third, separate block.
-    expect([...html.matchAll(/<div class="panel-defs"/g)]).toHaveLength(2);
-    expect([...html.matchAll(/id="shared-defs"/g)]).toHaveLength(1);
-  });
-
-  it("leaves the diff's symbols to the navigation server: every identifier is an .id span, none pre-targeted", () => {
-    const panel = /<article class="panel slice-panel"[\s\S]*?<\/article>/.exec(html)![0];
-    expect(panel).toContain('<div class="code-pane" data-file="a.ts" data-side="after">');
-    expect(panel).toContain('id">retry</span>');
-    expect(panel).not.toContain("data-target");
-    // A removed line has no head-side position: nothing to ask about.
-    const at = panel.indexOf('<span class="line diff-del">');
-    const removed = panel.slice(at, panel.slice(at + 1).search(/<span class="line[ "]/) + at + 1);
-    expect(removed).toContain("retryDelayed");
-    expect(removed).not.toContain('class="id"');
-  });
-
-  it("falls back to any track's panel-defs, so a symbol resolved to another slice's call-graph node still opens", () => {
-    // Without this, a tap on a node walked only in a different slice's
-    // graph finds nothing in the current track or #shared-defs and does
-    // nothing — see panelFor's own lookup order just above.
-    expect(html).toContain('document.querySelector(".panel-defs " + sel)');
-  });
-
-  it("emits one render-data blob for the whole page", () => {
-    expect([...html.matchAll(/id="render-data"/g)]).toHaveLength(1);
-  });
-
-  it("renders a slice with no graph, without clickable symbols", () => {
-    const second = html.slice(html.indexOf("Second"));
-    expect(second).toContain("no call graph");
-  });
-
-  it("escapes the per-slice name map so it survives as an attribute", () => {
-    expect(html).toContain("data-names=\"{&quot;a.ts#retry&quot;");
-  });
-
-  it("renders a file's fragments as one pane, not one box each", () => {
-    // Both of slice one's fragments are in a.ts, so they share a pane.
-    const panel = /<article class="panel slice-panel"[\s\S]*?<\/article>/.exec(html)![0];
-    expect([...panel.matchAll(/class="code-pane"/g)]).toHaveLength(1);
-    expect([...panel.matchAll(/class="source"/g)]).toHaveLength(1);
-  });
-
-  it("puts nothing between the fragments to break the listing", () => {
-    const panel = /<article class="panel slice-panel"[\s\S]*?<\/article>/.exec(html)![0];
-    // Neither the fragment ids nor their summaries reach the page.
-    expect(panel).not.toContain("a.ts#0@1-3");
-    expect(panel).not.toContain("calls retry");
-    expect(panel).not.toContain("later change");
-    // Only the code rows and the expanders between them.
-    const block = /<pre class="source"[\s\S]*?<\/pre>/.exec(panel)![0];
-    const rows = [...block.matchAll(/<span class="line( [^"]*)?"/g)].map((m) =>
-      (m[1] ?? "").trim(),
-    );
-    expect(new Set(rows)).toEqual(new Set(["", "diff-add", "diff-del"]));
-  });
-
-  it("marks the words that changed inside a paired −/+ line, and nothing when a line was rewritten", () => {
-    const pairFragment = {
-      ...farFragment,
-      id: "a.ts#2@40-41",
-      lines: ["-const y = 1;", "+const y = 2;"],
-      newLineNumbers: [null, 40] as (number | null)[],
-    };
-    const paired = render({ fragments: [fragment, pairFragment] });
-    expect(paired).toContain('diff-del-inner">1</span>');
-    expect(paired).toContain('diff-add-inner">2</span>');
-    // `const retryDelayed = 2;` → `function retry() {}` shares only spaces.
-    const panel = /<article class="panel slice-panel"[\s\S]*?<\/article>/.exec(paired)![0];
-    expect(panel).not.toContain('diff-del-inner">const');
-  });
-
-  it("puts an expander over the run hidden between two fragments, labelled with the scope after it", () => {
-    // The first fragment ends at line 3 and shows 5 lines after it; the next
-    // starts at 40 and shows 5 before it, leaving 9..34 hidden. Line 35 is
-    // inside Box.open.
-    expect(html).toContain('data-from="9" data-to="34"');
-    expect(html).toContain('<span class="gap-crumb">class Box › open()</span>');
-  });
-
-  it("heads the pane with the same sticky scope bar every panel uses, plus the file's +/− count", () => {
-    const panel = /<article class="panel slice-panel"[\s\S]*?<\/article>/.exec(html)![0];
-    expect(panel).toContain(`<div class="scope-bar" data-key="after:a.ts" aria-expanded="true">${SCOPE_CARET}<span class="scope-path"><span class="name">a.ts</span></span>`);
-    // Line 1 is the first visible line, inside Box.
-    expect(panel).toContain('<span class="scope-sym">Box</span>');
-    expect(panel).toContain('<span class="stat"><span class="plus">+3</span><span class="minus">−1</span></span>');
-    expect(panel).not.toContain("file-block");
-  });
-
-  it("shows context around a fragment and an expander over the tail", () => {
-    // Five lines of trailing context after the fragment ending at line 3,
-    // and nothing beyond it until the next fragment's own context.
-    const panel = /<article class="panel slice-panel"[\s\S]*?<\/article>/.exec(html)![0];
-    expect(panel).toContain('<span class="lineno"> 8</span>');
-    expect(panel).not.toContain('<span class="lineno"> 9</span>');
-    expect(panel).toContain('<span class="lineno">35</span>');
-    expect(panel).toContain('data-from="46" data-to="60"');
-  });
-});
-
 describe("fileBlockRanges", () => {
   it("pads each fragment with context and merges touching pads", () => {
     expect(fileBlockRanges([fragment, farFragment], 60)).toEqual([
@@ -267,228 +46,68 @@ describe("fileBlockRanges", () => {
   });
 });
 
-describe("renderSliceExplorerHtml navigation hooks", () => {
-  const html = render();
-
-  it("ships nothing precomputed: no reference or name blobs, an empty shared-defs", () => {
-    expect(html).not.toContain('id="ref-data"');
-    expect(html).not.toContain('id="def-names"');
-    expect(html).not.toContain("window.REFS");
-    expect(html).toContain('<div id="shared-defs" class="panel-defs" hidden></div>');
-  });
-
-  it("asks the local server about a symbol, its callers, and its panel when clicked", () => {
-    expect(html).toContain('"/definition?file="');
-    expect(html).toContain('"/references?id="');
-    expect(html).toContain('"/panel?id="');
-    expect(html).toContain("e.metaKey || e.ctrlKey");
-    expect(html).not.toContain("contextmenu");
-    expect(html).toContain("resolving");
-    expect(html).not.toContain("more</div>");
-  });
-
-  it("keeps the in-place shortcut and tells the server when the page goes", () => {
-    expect(html).toContain("inView");
-    expect(html).toContain("linkInPlace");
-    expect(html).toContain('sendBeacon(navUrl("/gone"))');
-    expect(html).toContain('fetch(navUrl("/alive")');
-    // Rendered without a navBase — a static copy — the page asks at the root.
-    expect(html).toContain('window.NAV_BASE = ""');
-  });
-
-  it("names the description in the sidebar, alongside the slices", () => {
-    const side = html.slice(html.indexOf('<aside class="side">'), html.indexOf("</aside>"));
-    expect(side).toContain('<button class="side-link doc-link" type="button">PR Description</button>');
-    // Both kinds of destination are the same kind of tappable sidebar link.
-    expect([...side.matchAll(/class="side-link/g)]).toHaveLength(3);
-    expect(html).not.toContain("view-tab");
-  });
-
-  it("keeps the description out of the deck's pips, so slice 1 is still pip 1", () => {
-    // Sharing `.slice-link` with the description would make it pip 0: the
-    // highlight would land on it at load and every slice click would be off
-    // by one.
-    expect(html).toContain('var pips = Array.prototype.slice.call(document.querySelectorAll(".slice-link"));');
-    const side = html.slice(html.indexOf('<aside class="side">'), html.indexOf("</aside>"));
-    const pips = [...side.matchAll(/class="side-link slice-link"/g)];
-    expect(pips).toHaveLength(2);
-    expect(side).not.toContain('class="side-link doc-link" title');
-  });
-
-  it("shows the code first, and switches views on one body class", () => {
-    // No `hidden` on either view: which one is showing is CSS driven by the
-    // class, so the deck is never rebuilt on the way back.
-    expect(html).toContain('<section class="doc-view">');
-    expect(html).toContain('<div class="stage">');
-    expect(html).toContain("body.showing-description .doc-view { display: block; }");
-    expect(html).toContain("body.showing-description .stage { display: none; }");
-    expect(html).toContain('.doc-link")) body.classList.add("showing-description")');
-    expect(html).toContain('.slice-link")) body.classList.remove("showing-description")');
-  });
-
-  it("leaves paging to the deck only while the deck is what's showing", () => {
-    expect(html).toContain('if (document.body.classList.contains("showing-description")) return;');
-  });
-
-  it("renders the description as markdown, alongside the model's overview", () => {
-    const doc = describedHtml.slice(describedHtml.indexOf('class="doc-view"'));
-    expect(doc).toContain(`<h3 class="md-h">Why</h3>`);
-    expect(doc).toContain(`<strong>hoists</strong>`);
-    expect(doc).toContain(`<code class="md-inline-code">retry</code>`);
-    expect(doc).toContain("opened by octocat");
-    expect(doc).toContain(`<p class="doc-overview">does a thing</p>`);
-  });
-
-  it("says a PR has no description rather than dropping the sidebar entry", () => {
-    expect(html).toContain('class="doc-empty">This PR has no description.');
-    expect(html).toContain('class="side-link doc-link"');
-  });
-
-  it("emits page scripts that actually parse", () => {
-    // A template literal quietly eats escapes (\/ becomes /), so a regex in
-    // the page script can turn into a line comment and take the whole script
-    // with it. Compile every emitted script the way the browser would.
-    const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
-    expect(scripts.length).toBeGreaterThan(0);
-    for (const [, src] of scripts) {
-      expect(() => new Function(src!)).not.toThrow();
-    }
-  });
-
-  it("restores a history step with the panels' anchors and lit pair, reusing panels still on the track", () => {
-    // Each step carries what every panel was opened for and which pair was
-    // lit, not just the node ids — and the restore hands them back.
-    expect(html).toContain("anchors: children.map(function (c) { return c.__anchor || null; })");
-    expect(html).toContain("anchors: step.anchors,");
-    expect(html).toContain("link: step.link,");
-    expect(html).toContain("__restore(step.ids, step.pos, step.anchors, step.link)");
-    expect(html).toContain("root.__restore = function (ids, newPos, anchors, link)");
-    // A panel still on the track keeps its scroll; a detached one is scrolled
-    // back to its anchor once re-attached.
-    expect(html).toContain("if (p.onTrack) { p.el.scrollTop = p.scrollTop; continue; }");
-    // A rebuilt panel scrolls to its anchor; the pair is re-lit through the
-    // same routine a live walk uses.
-    expect(html).toContain("if (el) revealInPanel(p.el, el);");
-    expect(html).toContain("if (from && to) applyLink(from, link.fromDesc, to, link.toDesc);");
-  });
-
-  it("ships no debug hints unless asked", () => {
-    expect(html).not.toContain("data-why");
-    expect(html).not.toContain("debug-legend");
-    expect(html).not.toContain("DEBUG_MARKS = true");
-    expect(html).not.toContain("body.debug-marks");
-  });
-
-  it("with --debug-marks, identifiers say they have not been asked yet and the overlay ships", () => {
-    const debug = renderSliceExplorerHtml({
-      prUrl: "https://github.com/a/b/pull/1",
-      prTitle: "A PR",
-      repo: "a/b",
-      number: 1,
-      overview: "does a thing",
-      files,
-      debugMarks: true,
-      slices: [{ id: "slice-1", title: "First", summary: "s", rationale: "r", fragments: [fragment], graph }],
-    });
-    expect(debug).toContain('<span class="tok-fn id" data-why="id · not asked yet">retry</span>');
-    expect(debug).toContain('id="debug-legend"');
-    expect(debug).toContain("window.DEBUG_MARKS = true");
-    expect(debug).toContain('e.key === "Shift"');
-    expect(debug).toContain("body.debug-marks [data-why]:hover::after");
-  });
-});
-
 describe("size breakdown", () => {
   const core = { ...fragment, kind: "core" as const };
   const test = { ...farFragment, kind: "test" as const };
   const boilerplate = { ...fragment, id: "a.ts#0@1-3-b", kind: "boilerplate" as const };
 
-  const classified = renderSliceExplorerHtml({
+  const input = (slices: SliceExplorerInput["slices"]): SliceExplorerInput => ({
     prUrl: "https://github.com/a/b/pull/1",
     prTitle: "A PR",
     repo: "a/b",
     number: 1,
     overview: "does a thing",
-    files,
-    slices: [
-      { id: "slice-1", title: "First", summary: "s", rationale: "r", fragments: [core, test] },
-      { id: "slice-2", title: "Second", summary: "s2", rationale: "r2", fragments: [boilerplate] },
-    ],
-  });
-  const side = /<aside class="side">[\s\S]*?<\/aside>/.exec(classified)![0];
-  const panels = [...classified.matchAll(/<article class="panel slice-panel"[\s\S]*?<\/article>/g)].map(
-    (m) => m[0],
-  );
-
-  it("replaces the fragment and line badges with per-kind +/− counts", () => {
-    const panel = panels[0]!;
-    expect(panel).not.toMatch(/\d+ fragments?<\/span>/);
-    expect(panel).not.toMatch(/\d+ lines<\/span>/);
-    expect(panel).toContain(
-      '<span class="kind">core</span> <span class="plus">+2</span><span class="minus">−1</span>',
-    );
-    expect(panel).toContain(
-      '<span class="kind">tests</span> <span class="plus">+1</span><span class="minus">−0</span>',
-    );
-    expect(panel).toContain('<span class="badge">1 file</span>');
+    files: [],
+    slices,
   });
 
-  it("draws a bar segment per kind, weighted by changed lines, and skips empty kinds", () => {
-    const panel = panels[0]!;
-    expect(panel).toContain('<span class="seg core" style="flex:3"></span>');
-    expect(panel).toContain('<span class="seg test" style="flex:1"></span>');
-    expect(panel).not.toContain("boilerplate");
-  });
-
-  it("sums every slice into the PR's breakdown under its title", () => {
-    expect(side).toContain('<div class="pr-title">A PR</div>');
-    expect(side).toContain(
-      '<span class="kind">core</span> <span class="plus">+2</span><span class="minus">−1</span>',
-    );
-    expect(side).toContain(
-      '<span class="kind">tests</span> <span class="plus">+1</span><span class="minus">−0</span>',
-    );
-    expect(side).toContain(
-      '<span class="kind">boilerplate</span> <span class="plus">+2</span><span class="minus">−1</span>',
-    );
-  });
-
-  it("renders nothing for a slice that changed no lines", () => {
-    const empty = renderSliceExplorerHtml({
-      prUrl: "https://github.com/a/b/pull/1",
-      prTitle: "A PR",
-      repo: "a/b",
-      number: 1,
-      overview: "does a thing",
-      files,
-      slices: [{ id: "slice-1", title: "First", summary: "s", rationale: "r", fragments: [] }],
+  it("splits a classified set by kind, counting only added and removed lines", () => {
+    expect(fragmentSize([core, test])).toEqual({
+      byKind: {
+        core: { additions: 2, deletions: 1 },
+        test: { additions: 1, deletions: 0 },
+        boilerplate: { additions: 0, deletions: 0 },
+      },
+      total: { additions: 3, deletions: 1 },
     });
-    expect(empty).not.toContain('class="delta"');
+  });
+
+  it("sums every slice into the PR's breakdown", () => {
+    const size = explorerSize(
+      input([
+        { id: "slice-1", title: "First", summary: "s", rationale: "r", fragments: [core, test] },
+        { id: "slice-2", title: "Second", summary: "s2", rationale: "r2", fragments: [boilerplate] },
+      ]),
+    );
+    expect(size.byKind).toEqual({
+      core: { additions: 2, deletions: 1 },
+      test: { additions: 1, deletions: 0 },
+      boilerplate: { additions: 2, deletions: 1 },
+    });
+    expect(size.total).toEqual({ additions: 5, deletions: 2 });
+  });
+
+  it("counts a set that changed no lines as zero, with its kinds still split", () => {
+    expect(explorerSize(input([]))).toEqual({
+      byKind: {
+        core: { additions: 0, deletions: 0 },
+        test: { additions: 0, deletions: 0 },
+        boilerplate: { additions: 0, deletions: 0 },
+      },
+      total: { additions: 0, deletions: 0 },
+    });
   });
 
   it("falls back to one unsplit total when any fragment is unclassified", () => {
-    // The shared fixture's fragments carry no kind: an older report.
-    const html = render();
-    const panel = /<article class="panel slice-panel"[\s\S]*?<\/article>/.exec(html)![0];
-    expect(panel).toContain('<span class="seg unclassified" style="flex:4"></span>');
-    expect(panel).toContain(
-      '<span class="delta-kind unclassified"><span class="plus">+3</span><span class="minus">−1</span></span>',
+    // An older report: its fragments carry no kind, so a partial split would
+    // stop adding up to the total.
+    const size = explorerSize(
+      input([
+        { id: "slice-1", title: "First", summary: "s", rationale: "r", fragments: [fragment, farFragment] },
+        { id: "slice-2", title: "Second", summary: "s2", rationale: "r2", fragments: [fragment] },
+      ]),
     );
-    expect(panel).not.toContain('<span class="kind">');
-    const oldSide = /<aside class="side">[\s\S]*?<\/aside>/.exec(html)![0];
-    expect(oldSide).toContain(
-      '<span class="delta-kind unclassified"><span class="plus">+5</span><span class="minus">−2</span></span>',
-    );
-  });
-});
-
-describe("explorer page scripts", () => {
-  it("inline scripts parse as JavaScript", () => {
-    const html = render();
-    const scripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)]
-      .filter((m) => !/type="application\/json"/.test(m[0]))
-      .map((m) => m[1]!);
-    expect(scripts.length).toBeGreaterThan(0);
-    for (const script of scripts) expect(() => new Function(script)).not.toThrow();
+    expect(size.byKind).toBeNull();
+    expect(size.total).toEqual({ additions: 5, deletions: 2 });
   });
 });

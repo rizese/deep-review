@@ -8,7 +8,7 @@ import "../styles/building.css";
  * What a PR's own URL shows while it is still being built: its title, the
  * build's progress lines as they arrive, and the way back to the index. The
  * live log comes from the same event stream the index reads, so a PR turns
- * into its explorer without a reload. A port of `renderBuildingPage`.
+ * into its explorer without a reload. A port of `the former server-rendered building page`.
  */
 export function Building({ pr, count }: { pr: PrView; count: number }): JSX.Element {
   const failed = pr.state === "failed";
