@@ -35,7 +35,7 @@
 .dot { display: inline-block; width: 0.45rem; height: 0.45rem; border-radius: 50%; background: var(--add-edge); }
 .gh { display: inline-flex; width: 1.7rem; height: 1.7rem; align-items: center; justify-content: center; border-radius: 50%; color: var(--ink-soft); }
 .gh:hover { color: var(--ink); background: var(--accent-soft); }
-.gh svg { width: 1.05rem; height: 1.05rem; fill: currentColor; }
+.gh svg { width: 1rem; height: 1rem; stroke-width: 1.8; }
 .forget { padding: 0.2rem 0.55rem; cursor: pointer; border: 1px solid var(--line-c); border-radius: 6px; background: var(--panel); color: var(--ink-faint); font-size: 0.78rem; }
 .forget:hover { color: var(--del-edge); border-color: var(--del-edge); }
 .retry { padding: 0.2rem 0.55rem; cursor: pointer; border: 1px solid var(--accent); border-radius: 6px; background: var(--accent-soft); color: var(--accent); font-size: 0.78rem; }

@@ -1,4 +1,5 @@
 import type { JSX } from "react";
+import { Monitor, Moon, Plus, Sun, Wrench, X, type LucideIcon } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import wordmark from "../assets/wordmark.png";
 import { addPr, parsePrUrl } from "../lib/api.js";
@@ -6,10 +7,10 @@ import { go } from "../lib/route.js";
 import { useTheme, type Theme } from "../lib/theme.js";
 import styles from "./Chrome.module.css";
 
-const THEMES: { id: Theme; glyph: string; title: string }[] = [
-  { id: "light", glyph: "☀", title: "Light" },
-  { id: "system", glyph: "◐", title: "Follow the system" },
-  { id: "dark", glyph: "☾", title: "Dark" },
+const THEMES: { id: Theme; Icon: LucideIcon; title: string }[] = [
+  { id: "light", Icon: Sun, title: "Light" },
+  { id: "system", Icon: Monitor, title: "Follow the system" },
+  { id: "dark", Icon: Moon, title: "Dark" },
 ];
 
 /**
@@ -63,15 +64,7 @@ export function Chrome({ count }: { count: number }): JSX.Element {
             setNote(null);
           }}
         >
-          {open ? (
-            <svg viewBox="0 0 16 16" aria-hidden="true">
-              <path d="M4 4l8 8M12 4l-8 8" />
-            </svg>
-          ) : (
-            <svg viewBox="0 0 16 16" aria-hidden="true">
-              <path d="M8 2.5v11M2.5 8h11" />
-            </svg>
-          )}
+          {open ? <X aria-hidden="true" /> : <Plus aria-hidden="true" />}
         </button>
         {open && (
           <form className={styles.addForm} aria-label="Add a PR by URL" onSubmit={(e) => void submit(e)}>
@@ -100,17 +93,14 @@ export function Chrome({ count }: { count: number }): JSX.Element {
             aria-label="Settings"
             onClick={() => go("/settings")}
           >
-            <svg viewBox="0 0 16 16" aria-hidden="true">
-              <circle cx="8" cy="8" r="2.4" />
-              <path d="M8 1.4v1.6M8 13v1.6M1.4 8h1.6M13 8h1.6M3.34 3.34l1.13 1.13M11.53 11.53l1.13 1.13M12.66 3.34l-1.13 1.13M4.47 11.53l-1.13 1.13" />
-            </svg>
+            <Wrench aria-hidden="true" />
           </button>
         </div>
       )}
       <div className={`${styles.glass} ${styles.theme}`} role="group" aria-label="Theme">
         {THEMES.map((t) => (
-          <button key={t.id} type="button" title={t.title} aria-pressed={theme === t.id} onClick={() => setTheme(t.id)}>
-            {t.glyph}
+          <button key={t.id} type="button" title={t.title} aria-label={t.title} aria-pressed={theme === t.id} onClick={() => setTheme(t.id)}>
+            <t.Icon aria-hidden="true" />
           </button>
         ))}
       </div>
