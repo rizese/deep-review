@@ -31,7 +31,9 @@ a.brand:hover { border-color: #fff; }
 .count {
   font-family: var(--mono); font-size: 0.82rem; min-width: 1.6rem; text-align: center;
   padding: 0.15rem 0.4rem; border-radius: 999px; background: var(--pressed-bg, #0f2b45); color: var(--pressed-ink, #fff);
+  text-decoration: none; cursor: pointer;
 }
+.count:hover { filter: brightness(1.15); }
 .add {
   display: inline-flex; align-items: center; justify-content: center;
   width: 1.9rem; height: 1.9rem; border-radius: 50%; border: 0; cursor: pointer;

@@ -50,9 +50,9 @@ export function Chrome({ count }: { count: number }): JSX.Element {
         />
       </a>
       <div className={`${styles.glass} ${styles.tools}`}>
-        <span className={styles.count} title="PRs on this server">
+        <a className={styles.count} href="/" title="Every PR on this server">
           {count}
-        </span>
+        </a>
         <button
           className={styles.add}
           type="button"
