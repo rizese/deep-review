@@ -3,6 +3,7 @@ import { ExternalLink } from "lucide-react";
 import type { MouseEvent } from "react";
 import { SizeBar } from "../components/SizeBar.js";
 import { addPr, forgetPr, parseKey, type PrView } from "../lib/api.js";
+import { usePageReady } from "../components/PageFade.js";
 import { go } from "../lib/route.js";
 import { useHeldPrs } from "../lib/usePrs.js";
 import { useStored } from "../lib/useStored.js";
@@ -117,6 +118,7 @@ function Card({ pr, hidden }: { pr: PrView; hidden: boolean }): JSX.Element {
 /** The index: every PR the server holds, on two tabs, with approved ones hidden on request. */
 export function Index(): JSX.Element {
   const { prs, ready } = useHeldPrs();
+  usePageReady(ready);
   const [tabStored, setTab] = useStored("deep-review.tab", "review");
   const tab = tabStored === "authored" ? "authored" : "review";
   const [hideStored, setHide] = useStored("deep-review.hideApproved", "false");

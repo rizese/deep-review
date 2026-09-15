@@ -19,7 +19,9 @@ button, input { font: inherit; }
 /* Leaving: the content dims; arriving: it comes up from nothing. The pool
    and the bar are outside this box and do not take part. */
 .page-fade.out { opacity: 0; transition: opacity 0.16s ease-in; pointer-events: none; }
-.page-fade.in { animation: page-in 0.22s ease-out; }
+/* Not yet ready: nothing to show, so nothing shown; the fade-in waits. */
+.page-fade.waiting { opacity: 0; }
+.page-fade.in { animation: page-in 0.24s ease-out; }
 @keyframes page-in { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
   .page-fade.out { transition: none; }

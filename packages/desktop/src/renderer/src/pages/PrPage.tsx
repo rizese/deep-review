@@ -1,4 +1,5 @@
 import { useEffect, useState, type JSX } from "react";
+import { usePageReady } from "../components/PageFade.js";
 import type { SliceExplorerInput } from "../lib/callGraph.js";
 import { go } from "../lib/route.js";
 import { useHeldPrs } from "../lib/usePrs.js";
@@ -23,6 +24,9 @@ export function PrPage({ target }: { target: PrRef }): JSX.Element | null {
   const pr = prs.find((p) => p.key === key);
   const built = pr?.state === "ready";
   const [input, setInput] = useState<SliceExplorerInput | null>(null);
+  // Ready once there is a page to show: the explorer with its input, or the
+  // building placeholder for a PR that is not built yet.
+  usePageReady(Boolean(pr) && (!built || input !== null));
 
   // A PR this server does not hold has no page here.
   useEffect(() => {
