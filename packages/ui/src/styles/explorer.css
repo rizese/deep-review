@@ -1,0 +1,241 @@
+/* The explorer, ported verbatim from EXPLORER_CSS (the horizontal track
+   and rails) and SLICE_CSS (the two-axis page). Global, for the same
+   reason source.css is: definition panels arrive from the navigation
+   server as HTML carrying exactly these class names.
+   SIZE_CSS is not here — the size bar is the SizeBar component, whose
+   module owns those rules; the two margins SLICE_CSS set on .delta moved
+   to Explorer.module.css with it. */
+
+  .viewport {
+    --rail: 34px; --gap: 12px;
+    position: relative; overflow: hidden; container-type: inline-size;
+    height: calc(100vh - 130px);
+  }
+  .track {
+    display: flex; gap: var(--gap); height: 100%; width: max-content;
+    transform: translateX(calc(var(--rail) - var(--pos, 0) * ((100cqw - 2 * var(--rail) - var(--gap)) / 2 + var(--gap))));
+    transition: transform 0.4s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .track.no-anim { transition: none; }
+  .panel {
+    flex: none; width: calc((100cqw - 2 * var(--rail) - var(--gap)) / 2);
+    height: 100%; overflow: auto; box-sizing: border-box;
+    position: relative; /* the callers menu is placed within the pane */
+    border: 1px solid var(--line-c); border-radius: 8px; padding: 0.7rem 0.9rem;
+    background: var(--panel);
+  }
+  .panel > h3 { margin: 0 0 0.3rem; }
+  .panel details.called-by { margin: 0.3rem 0 0.6rem; }
+  .panel details.called-by summary { font-size: 0.8rem; }
+  .panel details.called-by .caller-rows { margin: 0; padding: 0 0.6rem 0.6rem; }
+  .caller-rows { display: flex; flex-direction: column; gap: 2px; margin: 0.2rem 0 0.5rem; }
+  .caller-row {
+    text-align: left; padding: 0.25rem 0.5rem; cursor: pointer;
+    border: 1px solid var(--line-c); border-radius: 6px;
+    background: none; color: inherit; font: inherit;
+    overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  }
+  .caller-row:hover { background: var(--accent-soft); border-color: var(--accent); }
+  .caller-row[disabled] { cursor: default; opacity: 0.6; }
+  .rail {
+    position: absolute; top: 0; bottom: 0; width: var(--rail); z-index: 2;
+    display: none; align-items: center; justify-content: center;
+    border: 1px solid var(--line-c); border-radius: 8px;
+    background: var(--panel); color: var(--accent); cursor: pointer;
+    writing-mode: vertical-rl; text-orientation: mixed;
+    font: 600 0.75rem ui-sans-serif, system-ui, sans-serif;
+    letter-spacing: 0.05em; padding: 0.6rem 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .rail:hover { background: var(--accent-soft); border-color: var(--accent); }
+  .rail-left { left: 0; }
+  .rail-right { right: 0; }
+  .viewport.can-back .rail-left { display: flex; }
+  .viewport.can-fwd .rail-right { display: flex; }
+  /* Visual link between a clicked symbol and the panel it opened: both get
+     the same accent blue; the clicked one dims (but stays visible) as the
+     panes slide. */
+  .sym-link { background: var(--accent); border-radius: 3px; padding: 0 2px; transition: opacity 0.7s ease; }
+  .sym-link, .sym-link * { color: var(--accent-ink) !important; }
+  .sym-link.sym-dim { opacity: 0.45; }
+  /* Any identifier can be asked about; it only shows as a link once hovered
+     — every name underlined would read as a wall of links. One the server
+     has already answered for keeps a quiet dotted underline. */
+  .id { cursor: pointer; }
+  .id:hover, .sym:hover { color: var(--accent); border-bottom: 1px dotted var(--accent); }
+  .sym { cursor: pointer; border-bottom: 1px dotted var(--ink-faint); }
+  /* Briefly, an identifier the server could not resolve. */
+  .id.miss { border-bottom: 1px dashed var(--ink-faint); opacity: 0.6; }
+  /* Cmd-click menu of callers; lives inside the panel so it scrolls with it. */
+  .ref-menu {
+    position: absolute; z-index: 5; min-width: 18rem; max-width: 34rem;
+    display: flex; flex-direction: column; gap: 2px; padding: 0.4rem;
+    border: 1px solid var(--line-c); border-radius: 8px; background: var(--panel);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+    max-height: 60vh; overflow: auto;
+  }
+  .ref-menu .call-sites-label { margin: 0 0.5rem 0.2rem; }
+  .ref-menu .ref-more { padding: 0.2rem 0.5rem; font-size: 0.72rem; color: var(--ink-faint); }
+  .ref-menu .ref-tag { margin-left: 0.35rem; padding: 0 0.3rem; border-radius: 3px; font-size: 0.66rem; color: var(--ink-faint); background: var(--accent-soft); }
+
+  /* The page is exactly one viewport tall and never scrolls itself: the bar
+     takes its row, and the sidebar and stage share the rest. Anything that
+     overflows scrolls inside its own pane — the sidebar, a panel, the
+     description — never the page. */
+  body.slice-explorer {
+    max-width: none; margin: 0; padding: 0;
+    height: 100vh; overflow: hidden;
+    display: grid; grid-template-columns: 240px 1fr; grid-template-rows: var(--chrome-h) minmax(0, 1fr);
+  }
+  /* The bar is the page grid's first row, whole. The server's markup gave
+     it a .chrome class; the Chrome component's class is module-scoped, so
+     the nav itself is named here. */
+  body.slice-explorer .chrome,
+  body.slice-explorer > #root > nav { grid-column: 1 / -1; }
+  .main { padding: 0.3rem 1rem 1rem; min-width: 0; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); }
+  .stage { position: relative; overflow: hidden; grid-row: 1; height: 100%; min-height: 0; }
+  .deck {
+    display: flex; flex-direction: column; height: 100%;
+    transform: translateY(calc(var(--slice, 0) * -100%));
+    transition: transform 0.5s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .deck.no-anim { transition: none; }
+  .slice-view { flex: none; height: 100%; }
+  .slice-view .viewport { height: 100%; }
+
+  .side {
+    /* A floating card, cut like the slice panels beside it: same border, same
+       radius, same glass; a margin so it floats on the pool rather than
+       running into the edge. */
+    box-sizing: border-box; min-height: 0; overflow-y: auto; margin: 0.3rem 0 1rem 1rem;
+    border: 1px solid var(--line-c); border-radius: 8px; padding: 1.1rem 0.9rem;
+    display: flex; flex-direction: column; gap: 1.2rem;
+    background: var(--panel); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  }
+  .side .pr { font-family: var(--mono); font-size: 0.72rem; color: var(--ink-soft); text-decoration: none; }
+  .side .pr:hover { color: var(--accent); }
+  .side .pr-title { font-size: 0.8rem; font-weight: 600; margin-top: 0.25rem; line-height: 1.35; }
+  .side-label { font-size: 0.62rem; font-weight: 600; letter-spacing: 0.1em;
+                text-transform: uppercase; color: var(--ink-faint); margin-bottom: 0.4rem; }
+  .slice-nav { display: flex; flex-direction: column; gap: 2px; }
+  /* Every destination the sidebar offers looks the same; the slice-link and
+     doc-link classes say which kind it is, and only the slices are the
+     deck's pips. */
+  .side-link {
+    display: flex; gap: 0.55rem; align-items: baseline; text-align: left;
+    padding: 0.42rem 0.55rem; border-radius: 6px; border: none;
+    background: none; color: var(--ink-soft); font: inherit; font-size: 0.78rem;
+    cursor: pointer; line-height: 1.3;
+  }
+  .side-link:hover { background: var(--panel-2); color: var(--ink); }
+  .side-link.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .slice-link .n { font-variant-numeric: tabular-nums; font-size: 0.68rem; opacity: 0.7; }
+  .side .foot { margin-top: auto; font-size: 0.7rem; color: var(--ink-faint); }
+  .progress-label { font-variant-numeric: tabular-nums; }
+
+  .history-toggle {
+    display: flex; align-items: center; justify-content: space-between; width: 100%;
+    background: none; border: none; padding: 0; margin-bottom: 0.4rem; cursor: pointer;
+    color: inherit; font: inherit;
+  }
+  .history-toggle .chev {
+    color: var(--ink-faint); font-size: 0.65rem; transition: transform 0.2s ease;
+  }
+  .history-block.collapsed .chev { transform: rotate(-90deg); }
+  .history-block.collapsed .history-body { display: none; }
+  .history-panel { display: flex; flex-direction: column; gap: 2px; }
+  .history-panel[hidden] { display: none; }
+  .history-entry {
+    display: flex; gap: 0.5rem; align-items: baseline; text-align: left; width: 100%;
+    padding: 0.32rem 0.55rem; border-radius: 6px; border: none;
+    background: none; color: var(--ink-soft); font: inherit; font-size: 0.74rem;
+    cursor: pointer; line-height: 1.3; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
+  .history-entry:hover { background: var(--panel-2); color: var(--ink); }
+  .history-entry.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .history-entry .n { font-variant-numeric: tabular-nums; font-size: 0.65rem; opacity: 0.7; }
+
+  .vrail {
+    position: absolute; left: 50%; transform: translateX(-50%); z-index: 3;
+    display: none; align-items: center; gap: 0.5rem; max-width: 60%;
+    border: 1px solid var(--line-c); border-radius: 999px;
+    background: var(--panel); color: var(--accent); cursor: pointer;
+    font: 600 0.75rem ui-sans-serif, system-ui, sans-serif;
+    padding: 0.2rem 0.9rem; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .vrail:hover { background: var(--accent-soft); border-color: var(--accent); }
+  .vrail-up { top: 4px; }
+  .vrail-down { bottom: 4px; }
+  .stage.can-up .vrail-up { display: flex; }
+  .stage.can-down .vrail-down { display: flex; }
+
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    font-size: 0.65rem; font-weight: 600; letter-spacing: 0.09em;
+    text-transform: uppercase; color: var(--accent); margin-bottom: 0.4rem;
+  }
+  .eyebrow::before { content: ""; width: 16px; height: 1px; background: var(--accent); }
+  .slice-panel > h3.slice-title {
+    font-size: 1.35rem; font-weight: 650; letter-spacing: -0.015em; margin: 0 0 0.5rem;
+  }
+  .slice-summary { margin: 0 0 0.55rem; font-size: 0.88rem; color: var(--ink-soft); max-width: 44rem; }
+  .slice-rationale { margin: 0 0 0.9rem; font-size: 0.8rem; color: var(--ink-faint); max-width: 44rem; }
+  .slice-badges { display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center; margin-bottom: 1.1rem; }
+  .badge.target { background: var(--accent-soft); color: var(--accent); border-color: transparent;
+                  font-family: var(--mono); }
+  .hint { font-size: 0.7rem; color: var(--ink-faint); margin-left: 0.3rem; }
+  .slice-panel .code-pane { margin: 0 0 1.1rem; }
+
+  /* The two things the sidebar can point at: the PR's prose, or one of its
+     slices. Which one is showing is a single class on the body, so the
+     stage and the description never both claim the main column, and the
+     highlight follows without any bookkeeping. */
+  .doc-link { margin-bottom: 0.9rem; }
+  .doc-view { display: none; grid-row: 1; height: 100%; min-height: 0; overflow-y: auto; padding-right: 0.8rem; }
+  body.showing-description .doc-view { display: block; }
+  body.showing-description .stage { display: none; }
+  body.showing-description .doc-link {
+    background: var(--accent-soft); color: var(--accent); font-weight: 600;
+  }
+  /* The slice the deck is parked on stays named in the sidebar, but yields
+     the highlight while the description is what's on screen. */
+  body.showing-description .slice-link.on {
+    background: none; color: var(--ink-soft); font-weight: 400;
+  }
+  body.showing-description .slice-link.on:hover { background: var(--panel-2); color: var(--ink); }
+  .doc-title { font-size: 1.35rem; font-weight: 650; letter-spacing: -0.015em;
+               margin: 0 0 0.4rem; max-width: 48rem; }
+  .doc-meta { font-size: 0.74rem; color: var(--ink-faint); margin-bottom: 1.4rem; }
+  .doc-meta a { color: var(--accent); text-decoration: none; font-family: var(--mono); }
+  .doc-block { max-width: 48rem; margin-bottom: 1.8rem; }
+  .doc-overview { margin: 0; font-size: 0.88rem; color: var(--ink-soft); line-height: 1.6; }
+  .doc-empty { font-size: 0.85rem; color: var(--ink-faint); font-style: italic; }
+
+  .md-h { margin: 1.3rem 0 0.5rem; font-weight: 650; letter-spacing: -0.01em; }
+  .md-p { margin: 0 0 0.75rem; font-size: 0.88rem; line-height: 1.6; }
+  .md-list { margin: 0 0 0.8rem; padding-left: 1.25rem; font-size: 0.88rem; line-height: 1.6; }
+  .md-list .md-list { margin: 0.2rem 0; }
+  /* A task item carries its own box, so the bullet would be a second marker. */
+  .md-list li:has(> .md-task) { list-style: none; margin-left: -1rem; }
+  .md-task { font-family: var(--mono); color: var(--ink-faint); }
+  .md-task.done { color: var(--add-edge); }
+  .md-quote { margin: 0 0 0.8rem; padding: 0.1rem 0 0.1rem 0.8rem;
+              border-left: 2px solid var(--line-c); color: var(--ink-soft); }
+  .md-rule { border: none; border-top: 1px solid var(--line-c); margin: 1.2rem 0; }
+  .md-code {
+    margin: 0 0 0.9rem; padding: 0.6rem 0.8rem; overflow-x: auto;
+    border: 1px solid var(--line-c); border-radius: 6px; background: var(--panel-2);
+    font-family: var(--mono); font-size: 0.76rem; line-height: 1.5;
+  }
+  .md-inline-code { font-family: var(--mono); font-size: 0.82em; padding: 0.08em 0.32em;
+                    border-radius: 4px; background: var(--panel-2); }
+  .md-a { color: var(--accent); }
+  .md-img { max-width: 100%; border: 1px solid var(--line-c); border-radius: 6px; }
+  .doc-block > :last-child { margin-bottom: 0; }
+
+  /* The app renders into #root, but the grid above is on the body — as it
+     was when the server wrote the markup. `display: contents` lets the bar,
+     the sidebar and the stage be the body's own grid items. */
+  body.slice-explorer > #root { display: contents; }

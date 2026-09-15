@@ -10,12 +10,21 @@ import path from "node:path";
 import { hunksForFileRange } from "@deep-review/pr";
 import type { DeclRef, EnclosingDeclaration, IncomingReference, LanguageBackend } from "./backend.js";
 import { Backends } from "./backends.js";
-import { definitionPanelId, renderDefinitionPanel } from "./explorer.js";
-import type { FileIndex } from "./html.js";
-import { explorerFileIndex, type SliceExplorerInput } from "./sliceExplorer.js";
-import type { DefinitionId, DefinitionTarget, FileDiff, ReferenceList, ReferenceSite } from "./types.js";
+import type { SliceExplorerInput } from "./sliceExplorer.js";
+import type { DefinitionId, DefinitionTarget, DiffHunk, FileDiff, ReferenceList, ReferenceSite } from "./types.js";
 
-export { definitionPanelId } from "./explorer.js";
+/** The id the page knows a definition's panel by: a graph node's own id, or `def:<id>`. */
+export function definitionPanelId(def: DefinitionTarget): string {
+  return def.nodeId ?? `def:${def.id}`;
+}
+
+/**
+ * How a definition becomes a panel. Supplied by whoever renders pages —
+ * this session answers *what* a symbol is and resolves to; it knows
+ * nothing about HTML, so the rendering is handed in. See
+ * `panelRendererFor` in sliceExplorer.ts for the page's own.
+ */
+export type PanelRenderer = (def: DefinitionTarget, hunks: DiffHunk[]) => string | null;
 
 /** Context lines shown either side of a windowed definition. */
 const WINDOW_CONTEXT = 10;
@@ -50,8 +59,8 @@ export interface PanelAnswer {
 }
 
 export interface NavSessionOptions {
-  /** Debug builds: rendered panels explain their marks (`data-why`). */
-  debug?: boolean | undefined;
+  /** Turns a resolved definition into its panel; see `PanelRenderer`. */
+  renderPanel: PanelRenderer;
 }
 
 function toRelative(root: string, fileName: string): string {
@@ -60,8 +69,7 @@ function toRelative(root: string, fileName: string): string {
 
 export class NavSession {
   private readonly backends: Backends;
-  private readonly index: FileIndex;
-  private readonly debug: boolean;
+  private readonly renderPanelHtml: PanelRenderer;
   /** Head-side text by repo-relative (or absolute, external) path: embedded files plus fetched windows. */
   private readonly linesByFile = new Map<string, string[]>();
   /** Files the page embeds whole; a definition elsewhere gets a window. */
@@ -80,11 +88,10 @@ export class NavSession {
   constructor(
     private readonly headDir: string,
     input: SliceExplorerInput,
-    options: NavSessionOptions = {},
+    options: NavSessionOptions,
   ) {
     this.backends = new Backends(headDir);
-    this.index = explorerFileIndex(input);
-    this.debug = options.debug ?? false;
+    this.renderPanelHtml = options.renderPanel;
     this.diff = input.diff ?? [];
     for (const file of [...input.files, ...input.slices.flatMap((s) => s.graph?.files ?? [])]) {
       if (file.side === "after" && !this.linesByFile.has(file.path)) this.linesByFile.set(file.path, file.lines);
@@ -299,7 +306,7 @@ export class NavSession {
     const hunks = def.external
       ? []
       : hunksForFileRange(this.diff, "new", def.file, def.startLine, def.endLine);
-    const html = renderDefinitionPanel(def, this.index, { debug: this.debug, hunks });
+    const html = this.renderPanelHtml(def, hunks);
     if (!html) return null;
     return { id: definitionPanelId(def), name: def.name, html };
   }

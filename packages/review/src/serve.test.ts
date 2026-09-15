@@ -1,9 +1,9 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { SliceExplorerInput } from "@deep-review/call-graph";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { serveExplorer, startNavServer, type NavServer } from "./serve.js";
+import { startNavServer, type NavServer } from "./serve.js";
 
 // A two-file TS project as the head checkout; the slice changes use.ts.
 const headDir = mkdtempSync(path.join(os.tmpdir(), "serve-test-"));
@@ -47,9 +47,26 @@ const input: SliceExplorerInput = {
   ],
 };
 
+/** A server holding this one already-built PR, rendered where the server mounts it. */
+async function serveOne(options: { uiDir?: string } = {}): Promise<NavServer & { pageUrl: string }> {
+  const [owner = "unknown", repo = "unknown"] = input.repo.split("/");
+  const ref = { owner, repo, number: input.number };
+  const server = await startNavServer({
+    build: ({ navBase }) => {
+      const mounted = { ...input, navBase };
+      return Promise.resolve({ input: mounted, headDir });
+    },
+    sessionGraceMs: 60,
+    ...options,
+  });
+  server.add(ref);
+  await server.registry.settled();
+  return { ...server, pageUrl: server.urlFor(ref) };
+}
+
 let server: NavServer & { pageUrl: string };
 beforeAll(async () => {
-  server = await serveExplorer({ headDir, input, sessionGraceMs: 60 });
+  server = await serveOne();
 });
 afterAll(async () => {
   await server.close();
@@ -61,16 +78,10 @@ const get = (route: string) => fetch(new URL(route.replace(/^\//, ""), server.pa
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const json = async (route: string): Promise<any> => (await get(route)).json();
 
-describe("serveExplorer", () => {
-  it("mounts the PR under its own prefix and serves the page uncached", async () => {
+describe("navigation server", () => {
+  it("mounts the PR under its own prefix", async () => {
     expect(server.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/$/);
     expect(server.pageUrl).toBe(`${server.url}pr/a/b/1/`);
-    const res = await get("/");
-    expect(res.status).toBe(200);
-    expect(res.headers.get("content-type")).toContain("text/html");
-    expect(res.headers.get("cache-control")).toBe("no-store");
-    // The page knows its own mount, so its questions come back here.
-    expect(await res.text()).toContain('window.NAV_BASE = "/pr/a/b/1/"');
   });
 
   it("redirects the PR's URL without its trailing slash", async () => {
@@ -79,12 +90,17 @@ describe("serveExplorer", () => {
     expect(res.headers.get("location")).toBe("/pr/a/b/1/");
   });
 
-  it("serves an index of what it holds at the root", async () => {
-    const res = await fetch(server.url);
-    expect(res.status).toBe(200);
-    const body = await res.text();
-    expect(body).toContain("a/b#1");
-    expect(body).toContain('href="/pr/a/b/1/"');
+  it("says the client app is not built, rather than serving a page of its own", async () => {
+    // Every page is the app's; without a build of it there is nothing to
+    // serve, and 503 says the server is up but the page is not here yet.
+    for (const res of [await fetch(server.url), await get("/")]) {
+      expect(res.status).toBe(503);
+      expect(res.headers.get("content-type")).toContain("text/html");
+      expect(res.headers.get("cache-control")).toBe("no-store");
+      const body = await res.text();
+      expect(body).toContain("The client app is not built.");
+      expect(body).toContain("pnpm build");
+    }
   });
 
   it("says what it is over /health and /prs", async () => {
@@ -97,7 +113,7 @@ describe("serveExplorer", () => {
     expect(prs.map((p: { key: string; state: string }) => [p.key, p.state])).toEqual([["a/b#1", "ready"]]);
   });
 
-  it("takes what GitHub says about a held PR over PATCH /prs/:key, and shows it on the index", async () => {
+  it("takes what GitHub says about a held PR over PATCH /prs/:key, and lists it", async () => {
     const patch = (key: string, facts: unknown) =>
       fetch(new URL(`/prs/${encodeURIComponent(key)}`, server.url), {
         method: "PATCH",
@@ -109,12 +125,100 @@ describe("serveExplorer", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { pr }: any = await res.json();
     expect(pr).toMatchObject({ key: "a/b#1", state: "ready", approved: true, approvers: ["alex"], role: "authored" });
-    const index = await (await fetch(server.url)).text();
-    expect(index).toContain('data-role="authored" data-approved="true"');
-    expect(index).toContain('title="approved by alex">approved</span>');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { prs }: any = await (await fetch(new URL("/prs", server.url))).json();
+    expect(prs[0]).toMatchObject({ key: "a/b#1", role: "authored", approved: true, approvers: ["alex"] });
     expect((await patch("a/b#2", { approved: true })).status).toBe(404);
     // Back the way the other tests expect it.
     expect((await patch("a/b#1", { approved: false, approvers: [], role: "review" })).status).toBe(200);
+  });
+
+  it("serves the client app at / and its assets when a build is present", async () => {
+    const uiDir = mkdtempSync(path.join(os.tmpdir(), "ui-dist-"));
+    writeFileSync(path.join(uiDir, "index.html"), "<!doctype html><title>Deep Review</title><div id=root></div>");
+    mkdirSync(path.join(uiDir, "assets"));
+    writeFileSync(path.join(uiDir, "assets", "index-abc.js"), "console.log(1)");
+    const withApp = await startNavServer({ build: () => Promise.reject(new Error("unused")), uiDir });
+    try {
+      const page = await fetch(withApp.url);
+      expect(page.headers.get("content-type")).toMatch(/text\/html/);
+      expect(await page.text()).toContain('<div id=root>');
+      const asset = await fetch(new URL("/assets/index-abc.js", withApp.url));
+      expect(asset.status).toBe(200);
+      expect(asset.headers.get("content-type")).toMatch(/javascript/);
+      expect(asset.headers.get("cache-control")).toMatch(/immutable/);
+      expect((await fetch(new URL("/assets/../index.html", withApp.url))).status).toBe(404);
+      expect((await fetch(new URL("/assets/nope.js", withApp.url))).status).toBe(404);
+    } finally {
+      await withApp.close();
+      rmSync(uiDir, { recursive: true, force: true });
+    }
+    // This suite's server has no build: the 503 page, as above.
+    expect((await fetch(server.url)).status).toBe(503);
+  });
+
+  it("serves a held PR's page from the client app when a build is present", async () => {
+    const uiDir = mkdtempSync(path.join(os.tmpdir(), "ui-dist-"));
+    writeFileSync(path.join(uiDir, "index.html"), "<!doctype html><title>Deep Review</title><div id=root></div>");
+    const withApp = await serveOne({ uiDir });
+    try {
+      // The app renders the explorer and the building placeholder itself,
+      // from the registry's stream and this PR's input.
+      const page = await fetch(withApp.pageUrl);
+      expect(page.status).toBe(200);
+      expect(await page.text()).toContain("<div id=root>");
+      // Its questions about symbols are still the server's to answer.
+      const where = new URL("definition?file=use.ts&line=4&col=9", withApp.pageUrl);
+      expect((await fetch(where)).status).toBe(200);
+      // A PR this server does not hold is still the 404 page, not the app.
+      const absent = await fetch(new URL("/pr/a/b/9/", withApp.url));
+      expect(absent.status).toBe(404);
+      expect(await absent.text()).toContain("is not loaded on this server");
+    } finally {
+      await withApp.close();
+      rmSync(uiDir, { recursive: true, force: true });
+    }
+  });
+
+  it("serves a ready PR's input as JSON, and says when there is none", async () => {
+    const res = await fetch(new URL("/prs/a%2Fb%231/input", server.url));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ prTitle: "A PR", repo: "a/b", number: 1, navBase: "/pr/a/b/1/" });
+    expect((await fetch(new URL("/prs/a%2Fb%239/input", server.url))).status).toBe(404);
+    expect((await fetch(new URL("/prs/%zz/input", server.url))).status).toBe(404);
+  });
+
+  it("streams a snapshot and then each change over /events", async () => {
+    const controller = new AbortController();
+    const res = await fetch(new URL("/events", server.url), { signal: controller.signal });
+    expect(res.headers.get("content-type")).toMatch(/text\/event-stream/);
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    const until = async (marker: string): Promise<string> => {
+      while (!buffer.includes(marker)) {
+        const { value, done } = await reader.read();
+        if (done) throw new Error("stream ended");
+        buffer += decoder.decode(value, { stream: true });
+      }
+      return buffer;
+    };
+    await until("event: snapshot");
+    expect(buffer).toMatch(/event: snapshot\ndata: \{"prs":\[\{.*"key":"a\/b#1"/);
+    await fetch(new URL("/prs/a%2Fb%231", server.url), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ approvers: ["sam"], approved: true }),
+    });
+    await until("event: pr");
+    expect(buffer).toMatch(/event: pr\ndata: \{"type":"pr","pr":\{.*"approvers":\["sam"\]/);
+    controller.abort();
+    // Back the way the other tests expect it.
+    await fetch(new URL("/prs/a%2Fb%231", server.url), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ approvers: [], approved: false }),
+    });
   });
 
   it("answers /definition with a stable id and the panel to open", async () => {
@@ -169,7 +273,7 @@ describe("serveExplorer", () => {
     await gone();
     await new Promise((r) => setTimeout(r, 120));
     expect(server.registry.get("a/b#1")?.live).toBe(false);
-    expect((await get("/")).status).toBe(200);
+    expect((await fetch(new URL("/health", server.url))).status).toBe(200);
 
     // The next question simply starts them again.
     const again = await json("/definition?file=use.ts&line=4&col=9");
@@ -194,7 +298,7 @@ describe("serveExplorer", () => {
     expect((await fetch(new URL("/prs/a%2Fb%231", server.url), { method: "DELETE", headers: { Origin: "http://evil.example" } })).status).toBe(403);
     // Nothing changed: the PR is still here, the server still answers.
     expect(server.registry.get("a/b#1")?.state).toBe("ready");
-    expect((await fetch(server.url)).status).toBe(200);
+    expect((await fetch(new URL("/health", server.url))).status).toBe(200);
   });
 
   it("answers malformed input with a client error, not a server fault", async () => {
@@ -244,6 +348,16 @@ describe("serveExplorer", () => {
     expect(fresh.registry.get("a/b#1")?.headSha).toBe("bbb2222");
     await fresh.close();
   }, 15_000);
+
+  it("stops when asked even while an /events stream is open", async () => {
+    const fresh = await startNavServer({ build: () => Promise.reject(new Error("unused")) });
+    const controller = new AbortController();
+    const stream = await fetch(new URL("/events", fresh.url), { signal: controller.signal });
+    expect(stream.status).toBe(200);
+    const stopped = Promise.race([fresh.close().then(() => "closed"), new Promise((r) => setTimeout(() => r("hung"), 3000))]);
+    expect(await stopped).toBe("closed");
+    controller.abort();
+  });
 
   it("stops when asked over /quit", async () => {
     expect((await fetch(new URL("/quit", server.url), { method: "POST" })).status).toBe(204);

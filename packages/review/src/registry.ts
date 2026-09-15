@@ -12,20 +12,23 @@
  * What was built is kept on disk too. A server lives for weeks and is
  * restarted for the most ordinary reasons — a new version, a reboot — and
  * without a memory every restart emptied the index and cost a slicing run
- * per PR to refill it. The ready PRs are written to one JSON file under the
- * state dir whenever the set of them changes, and read back when the
+ * per PR to refill it. Ready and failed PRs are written to a `PrStore` (one
+ * file per PR; see store.ts) as they change, and read back when the
  * registry is made, so a restart resumes with the same pages and no builds.
+ * What is stored is a build's input; the page is the client app's to render
+ * from it, so a new version of the app shows on old PRs too.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import path from "node:path";
+import { existsSync } from "node:fs";
 import {
   explorerSize,
   NavSession,
+  panelRendererFor,
   type SizeBreakdown,
   type SliceExplorerInput,
 } from "@deep-review/call-graph";
-import { prUrl, type PrRef, type PrRole } from "@deep-review/pr";
+import { failureKindOf, prUrl, type FailureKind, type PrRef, type PrRole } from "@deep-review/pr";
+import type { PrStore, StoredPr } from "./store.js";
 
 export type { PrRef, PrRole } from "@deep-review/pr";
 
@@ -101,7 +104,58 @@ export interface PrFacts {
   approvers?: string[] | undefined;
   author?: string | undefined;
   draft?: boolean | undefined;
+  /** The PR's head commit as GitHub reports it now; a change un-parks a failed build. */
+  headSha?: string | undefined;
 }
+
+/**
+ * How a failed PR stands with respect to being tried again. The kind decides
+ * the policy (see RetryPolicy); attempts count failures since the last
+ * success or reset; `nextRetryAt` is set while a retry is scheduled and
+ * `parked` when nothing will happen until the PR's head moves or someone
+ * asks — which is also what a restart does for transient and config
+ * failures, since a restart is when the environment changes.
+ */
+export interface PrFailure {
+  kind: FailureKind;
+  attempts: number;
+  /** When the first of the current run of failures happened. */
+  firstFailedAt: number;
+  nextRetryAt?: number | undefined;
+  parked: boolean;
+  /** The head commit the PR was at when it failed, when known. */
+  headSha?: string | undefined;
+}
+
+/**
+ * When to try a failed build again. Transient failures back off along the
+ * schedule and give up after `transientMaxMs` from the first failure. Build
+ * failures — our own pipeline, or model output that would not validate —
+ * get `buildRetries` more goes, since the model is not deterministic, then
+ * park until the head moves. Config and input failures park at once:
+ * nothing about a retry would differ.
+ */
+export interface RetryPolicy {
+  transientDelaysMs: number[];
+  transientMaxMs: number;
+  buildRetries: number;
+  buildDelayMs: number;
+}
+
+export const DEFAULT_RETRY: RetryPolicy = {
+  transientDelaysMs: [60_000, 120_000, 300_000, 900_000, 1_800_000, 3_600_000],
+  transientMaxMs: 24 * 3_600_000,
+  buildRetries: 1,
+  buildDelayMs: 60_000,
+};
+
+/**
+ * What changed, for whoever is listening: a PR's view after any change to
+ * it — state, a log line, its facts — or a PR gone. `/events` streams
+ * these so a page learns of a build finishing the moment it does rather
+ * than on its next poll.
+ */
+export type RegistryEvent = { type: "pr"; pr: PrView } | { type: "removed"; key: PrKey };
 
 /** What a PR looks like from outside: the index page and `/prs` both read this. */
 export interface PrView extends PrRef {
@@ -124,6 +178,8 @@ export interface PrView extends PrRef {
   size?: SizeBreakdown | undefined;
   /** Why the build failed, when it did. */
   error?: string | undefined;
+  /** How the failure stands: its kind, and whether and when it will be retried. */
+  failure?: PrFailure | undefined;
   addedAt: number;
   readyAt?: number | undefined;
   /** The head commit the build was made from, for staleness checks. */
@@ -139,21 +195,26 @@ export interface BuiltPr {
   input: SliceExplorerInput;
   /** The PR's head checkout, which the language services read. */
   headDir: string;
-  html: string;
   /** The head commit this build was made from; a moved head means a stale build. */
   headSha?: string | undefined;
+  /** The merge-base commit the base checkout is at; with headSha, the two worktrees this build keeps alive. */
+  baseSha?: string | undefined;
+}
+
+/** What a PR's build holds on disk: its checkouts, by directory and by commit. */
+export interface CheckoutRef extends PrRef {
+  headDir?: string | undefined;
+  headSha?: string | undefined;
+  baseSha?: string | undefined;
 }
 
 /** Per-PR knobs, carried from the request that added it. */
 export interface AddOptions {
   /** Reuse a saved slice JSON instead of paying for a fresh slicing run. */
   slicesFile?: string | undefined;
-  /** Also write this run's slice JSON here. */
-  save?: string | undefined;
   model?: string | undefined;
   maxGraphs?: number | undefined;
   debugMarks?: boolean | undefined;
-  workDir?: string | undefined;
 }
 
 /**
@@ -181,19 +242,19 @@ export interface RegistryOptions {
   logLimit?: number | undefined;
   onProgress?: ((message: string) => void) | undefined;
   /**
-   * Where the ready PRs are remembered between runs. Read once when the
-   * registry is made, written whenever the set of ready PRs changes. Absent,
-   * the registry forgets everything on exit, as a `--no-daemon` run should.
+   * Where PRs are remembered between runs: the store keeps a build's input,
+   * which is all the client app needs to render the page afresh. Absent, the
+   * registry forgets everything on exit.
    */
-  stateFile?: string | undefined;
+  persistence?: { store: PrStore } | undefined;
   /**
-   * The page for a build, from what the build produced. Applied to each PR
-   * restored from the state file, so a page that outlives a new version of
-   * the renderer comes back in the new version's chrome rather than the
-   * one it was written with; the saved HTML is only a fallback for when
-   * this is absent.
+   * Called after a PR is dropped, with what it held on disk and what every
+   * PR still here holds, so its checkouts can be released without taking a
+   * worktree another PR shares. The registry itself touches no checkout.
    */
-  rerender?: ((built: BuiltPr) => string) | undefined;
+  onRemoved?: ((removed: CheckoutRef, remaining: CheckoutRef[]) => void) | undefined;
+  /** When failed builds are tried again; see `RetryPolicy`. */
+  retry?: Partial<RetryPolicy> | undefined;
 }
 
 interface Entry extends PrRef {
@@ -205,6 +266,10 @@ interface Entry extends PrRef {
   addedAt: number;
   readyAt?: number;
   error?: string;
+  failedAt?: number;
+  failure?: PrFailure;
+  /** Pending retry of a failed build. */
+  retryTimer?: NodeJS.Timeout;
   log: string[];
   built?: BuiltPr;
   session?: NavSession;
@@ -214,60 +279,38 @@ interface Entry extends PrRef {
   release?: NodeJS.Timeout;
 }
 
-/**
- * One ready PR as written to the state file: what identifies it, what it was
- * added with, and what the build produced — everything `view()` and
- * `sessionFor()` read, and nothing a build would have to redo. A session is
- * not here; it never survived a page reload either, and is remade from
- * `built.headDir` on the first click.
- */
-interface SavedPr extends PrRef {
-  options: AddOptions;
-  /** Absent in state files written before facts existed: then it is a review PR, approval unknown. */
-  facts?: PrFacts | undefined;
-  addedAt: number;
-  readyAt: number;
-  built: BuiltPr;
+/** "4m", "90s", "2h": how long until a retry, for a log line or an index row. */
+export function humanDelay(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 90) return `${s}s`;
+  const m = Math.round(s / 60);
+  if (m < 90) return `${m}m`;
+  return `${Math.round(m / 60)}h`;
 }
 
-interface SavedRegistry {
-  version: 1;
-  prs: SavedPr[];
-}
-
-/** The state file's records, or none: a file that cannot be read is an empty memory, not a failed start. */
-function readSavedPrs(file: string): SavedPr[] {
-  try {
-    const parsed = JSON.parse(readFileSync(file, "utf8")) as Partial<SavedRegistry>;
-    if (!Array.isArray(parsed.prs)) return [];
-    return parsed.prs.filter(isSavedPr);
-  } catch {
-    // No file, or one we cannot read: an empty memory is the safe start —
-    // the worst it costs is the builds a restart cost before this existed.
-    return [];
+/** Why a failed PR is left alone, by the kind of failure. */
+export function parkedNote(kind: FailureKind): string {
+  switch (kind) {
+    case "config":
+      return "not retried: fix the setup, then retry";
+    case "input":
+      return "not retried: nothing will change until the PR does";
+    case "transient":
+      return "gave up retrying; retry by hand, or it retries when the PR changes";
+    default:
+      return "parked until the PR changes; retry by hand to try again now";
   }
 }
 
-/** Enough of a record's shape to trust it; a half-written file yields nothing rather than a crash later. */
-function isSavedPr(record: unknown): record is SavedPr {
-  if (typeof record !== "object" || record === null) return false;
-  const r = record as Partial<SavedPr>;
-  return (
-    typeof r.owner === "string" &&
-    typeof r.repo === "string" &&
-    Number.isInteger(r.number) &&
-    typeof r.addedAt === "number" &&
-    typeof r.readyAt === "number" &&
-    typeof r.options === "object" &&
-    r.options !== null &&
-    typeof r.built === "object" &&
-    r.built !== null &&
-    typeof r.built.headDir === "string" &&
-    typeof r.built.html === "string" &&
-    typeof r.built.input === "object" &&
-    r.built.input !== null &&
-    Array.isArray(r.built.input.slices)
-  );
+function checkoutOf(entry: Entry): CheckoutRef {
+  return {
+    owner: entry.owner,
+    repo: entry.repo,
+    number: entry.number,
+    ...(entry.built?.headDir ? { headDir: entry.built.headDir } : {}),
+    ...(entry.built?.headSha ? { headSha: entry.built.headSha } : {}),
+    ...(entry.built?.baseSha ? { baseSha: entry.built.baseSha } : {}),
+  };
 }
 
 /** The facts a caller actually stated: an undefined field means "no news", not "unset". */
@@ -294,8 +337,10 @@ export class PrRegistry {
   private readonly sessionIdleMs: number;
   private readonly logLimit: number;
   private readonly log: (message: string) => void;
-  private readonly stateFile: string | null;
-  private readonly rerender: ((built: BuiltPr) => string) | null;
+  private readonly persistence: { store: PrStore } | null;
+  private readonly onRemoved: ((removed: CheckoutRef, remaining: CheckoutRef[]) => void) | null;
+  private readonly retry: RetryPolicy;
+  private readonly listeners = new Set<(event: RegistryEvent) => void>();
   /** Keys waiting for a build slot, in the order they were added. */
   private readonly queue: PrKey[] = [];
   private building = 0;
@@ -309,9 +354,10 @@ export class PrRegistry {
     this.sessionIdleMs = options.sessionIdleMs ?? DEFAULTS.sessionIdleMs;
     this.logLimit = options.logLimit ?? DEFAULTS.logLimit;
     this.log = options.onProgress ?? (() => {});
-    this.stateFile = options.stateFile ?? null;
-    this.rerender = options.rerender ?? null;
-    if (this.stateFile) this.restore(this.stateFile);
+    this.persistence = options.persistence ?? null;
+    this.onRemoved = options.onRemoved ?? null;
+    this.retry = { ...DEFAULT_RETRY, ...options.retry };
+    if (this.persistence) this.restore();
     // An idle session is worth reclaiming but not worth watching closely;
     // a sweep at a fraction of the idle window is close enough.
     if (this.sessionIdleMs > 0) {
@@ -350,9 +396,33 @@ export class PrRegistry {
       lastUsed: Date.now(),
     };
     this.entries.set(key, entry);
+    this.emit(entry);
     this.queue.push(key);
     this.pump();
     return this.view(entry);
+  }
+
+  /** Hear of every change to every PR here; returns the way to stop listening. */
+  subscribe(listener: (event: RegistryEvent) => void): () => void {
+    this.listeners.add(listener);
+    return () => void this.listeners.delete(listener);
+  }
+
+  private emit(entry: Entry): void {
+    if (this.listeners.size === 0) return;
+    const event: RegistryEvent = { type: "pr", pr: this.view(entry) };
+    for (const listener of this.listeners) {
+      try {
+        listener(event);
+      } catch (error) {
+        this.log(`a listener failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
+
+  /** A ready PR's page input, for a client that renders the page itself; null until built. */
+  input(key: PrKey): SliceExplorerInput | null {
+    return this.entries.get(key)?.built?.input ?? null;
   }
 
   get(key: PrKey): PrView | null {
@@ -381,9 +451,60 @@ export class PrRegistry {
       this.log(`${entry.key}: ${facts.approved ? `approved${by}` : "no longer approved"}.`);
     }
     entry.facts = next;
-    // Facts ride in the state file with the build, so a restart keeps a PR
-    // on the right tab rather than defaulting it back to "review".
-    if (entry.state === "ready") this.persist();
+    // Facts are stored with the build, so a restart keeps a PR on the right
+    // tab rather than defaulting it back to "review".
+    this.persist(entry);
+    this.emit(entry);
+    // A failed PR whose head has moved is a different PR: whatever went wrong
+    // may be fixed, so it is tried again now, with a clean slate.
+    if (entry.state === "failed" && facts.headSha && entry.failure && entry.failure.headSha !== facts.headSha) {
+      delete entry.failure;
+      this.requeue(entry, `head moved to ${facts.headSha.slice(0, 8)}; retrying`);
+    }
+  }
+
+  /** Try a failed PR again, now: back in the queue, its failure kept for the backoff to count. */
+  private requeue(entry: Entry, why: string): void {
+    if (entry.retryTimer) {
+      clearTimeout(entry.retryTimer);
+      delete entry.retryTimer;
+    }
+    entry.state = "queued";
+    delete entry.error;
+    if (entry.failure) entry.failure = { ...entry.failure, nextRetryAt: undefined, parked: false };
+    entry.log.push(why);
+    this.log(`${entry.key}: ${why}.`);
+    this.emit(entry);
+    this.queue.push(entry.key);
+    this.pump();
+  }
+
+  /**
+   * How long until the next try, or null to park. Attempts includes the one
+   * that just failed.
+   */
+  private retryDelay(failure: PrFailure): number | null {
+    switch (failure.kind) {
+      case "transient": {
+        if (Date.now() - failure.firstFailedAt > this.retry.transientMaxMs) return null;
+        const delays = this.retry.transientDelaysMs;
+        return delays[Math.min(failure.attempts, delays.length) - 1] ?? null;
+      }
+      case "build":
+        return failure.attempts <= this.retry.buildRetries ? this.retry.buildDelayMs : null;
+      default:
+        return null;
+    }
+  }
+
+  private scheduleRetry(entry: Entry, delayMs: number): void {
+    if (entry.retryTimer) clearTimeout(entry.retryTimer);
+    entry.retryTimer = setTimeout(() => {
+      delete entry.retryTimer;
+      if (this.disposed || this.entries.get(entry.key) !== entry || entry.state !== "failed") return;
+      this.requeue(entry, `retrying (attempt ${(entry.failure?.attempts ?? 0) + 1})`);
+    }, delayMs);
+    entry.retryTimer.unref();
   }
 
   list(): PrView[] {
@@ -397,9 +518,9 @@ export class PrRegistry {
     return this.entries.size;
   }
 
-  /** The rendered page, or null while the PR is not ready. */
-  html(key: PrKey): string | null {
-    return this.entries.get(key)?.built?.html ?? null;
+  /** Every held PR's checkouts, for whoever keeps the work directory tidy. */
+  checkouts(): CheckoutRef[] {
+    return [...this.entries.values()].map(checkoutOf);
   }
 
   /**
@@ -425,7 +546,7 @@ export class PrRegistry {
       }
       this.log(`${key}: starting language services.`);
       entry.session = new NavSession(entry.built.headDir, entry.built.input, {
-        debug: entry.built.input.debugMarks,
+        renderPanel: panelRendererFor(entry.built.input),
       });
       entry.session.warm();
     }
@@ -462,14 +583,29 @@ export class PrRegistry {
     const entry = this.entries.get(key);
     if (!entry) return false;
     if (entry.release) clearTimeout(entry.release);
+    if (entry.retryTimer) clearTimeout(entry.retryTimer);
     this.releaseSession(entry, "removed");
     const queued = this.queue.indexOf(key);
     if (queued !== -1) this.queue.splice(queued, 1);
     this.entries.delete(key);
-    // Written now, not at the next build: the watcher removes a PR once it
-    // is merged or closed, and a snapshot that still held it would put it
-    // back on the index at the next restart.
-    this.persist();
+    // Forgotten on disk now, not at the next build: the watcher removes a
+    // PR once it is merged or closed, and a record that still held it would
+    // put it back on the index at the next restart.
+    this.persistence?.store.remove(entry);
+    for (const listener of this.listeners) {
+      try {
+        listener({ type: "removed", key });
+      } catch {
+        // A listener's trouble is its own.
+      }
+    }
+    if (this.onRemoved) {
+      try {
+        this.onRemoved(checkoutOf(entry), this.checkouts());
+      } catch (error) {
+        this.log(`${key}: cleanup failed — ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
     return true;
   }
 
@@ -479,6 +615,7 @@ export class PrRegistry {
     this.sweep = null;
     for (const entry of this.entries.values()) {
       if (entry.release) clearTimeout(entry.release);
+      if (entry.retryTimer) clearTimeout(entry.retryTimer);
       this.releaseSession(entry, "shutting down");
     }
   }
@@ -523,10 +660,12 @@ export class PrRegistry {
 
   private async run(entry: Entry): Promise<void> {
     entry.state = "building";
+    this.emit(entry);
     const note = (message: string): void => {
       entry.log.push(message);
       if (entry.log.length > this.logLimit) entry.log.shift();
       this.log(`${entry.key}: ${message}`);
+      this.emit(entry);
     };
     try {
       const built = await this.build(
@@ -543,6 +682,7 @@ export class PrRegistry {
       entry.state = "ready";
       entry.readyAt = Date.now();
       delete entry.error;
+      delete entry.failure;
       note(
         `ready — ${built.input.slices.length} slices, ${built.input.slices.filter((s) => s.graph).length} with a walkable call graph.`,
       );
@@ -550,73 +690,102 @@ export class PrRegistry {
       if (!this.entries.has(entry.key)) return;
       entry.state = "failed";
       entry.error = error instanceof Error ? error.message : String(error);
-      note(`failed — ${entry.error}`);
+      entry.failedAt = Date.now();
+      const kind = failureKindOf(error);
+      const prior = entry.failure;
+      const failure: PrFailure = {
+        kind,
+        attempts: (prior?.attempts ?? 0) + 1,
+        firstFailedAt: prior?.firstFailedAt ?? entry.failedAt,
+        parked: false,
+        headSha: entry.facts.headSha,
+      };
+      const delay = this.retryDelay(failure);
+      if (delay === null) failure.parked = true;
+      else failure.nextRetryAt = Date.now() + delay;
+      entry.failure = failure;
+      note(`failed (${kind}) — ${entry.error}`);
+      if (delay === null) note(parkedNote(kind));
+      else {
+        note(`retrying in ${humanDelay(delay)} (attempt ${failure.attempts} of this run)`);
+        this.scheduleRetry(entry, delay);
+      }
     }
-    this.persist();
+    // Both branches said their last word through note(), which emitted.
+    this.persist(entry);
   }
 
   /**
-   * Take the previous run's ready PRs as this run's, straight into the
-   * table: no queue, no build. Their checkouts are not checked here — a
-   * page needs none, and the first click that does finds out (sessionFor).
+   * Take the stored PRs as this run's, straight into the table: no queue, no
+   * build. A ready PR comes back ready, with the input the client app renders
+   * it from. A failed PR comes back failed, with its reason, so it can be
+   * retried rather than forgotten. Checkouts are not checked here — a page
+   * needs none, and the first click that does finds out (sessionFor).
    */
-  private restore(file: string): void {
-    for (const saved of readSavedPrs(file)) {
-      const key = prKey(saved);
-      // Re-rendered rather than replayed: the input is the truth about the
-      // PR, the HTML is this version's way of showing it. A render that
-      // throws keeps the saved page — a stale page beats a missing one.
-      let built = saved.built;
-      if (this.rerender) {
-        try {
-          built = { ...saved.built, html: this.rerender(saved.built) };
-        } catch (error) {
-          this.log(`${key}: could not re-render — ${error instanceof Error ? error.message : String(error)}`);
-        }
-      }
-      const entry: Entry = {
-        owner: saved.owner,
-        repo: saved.repo,
-        number: saved.number,
-        prUrl: prUrl(saved),
+  private restore(): void {
+    if (!this.persistence) return;
+    let restored = 0;
+    for (const stored of this.persistence.store.load()) {
+      const key = prKey(stored);
+      const base = {
+        owner: stored.owner,
+        repo: stored.repo,
+        number: stored.number,
+        prUrl: prUrl(stored),
         key,
-        state: "ready",
-        options: saved.options,
-        facts: saved.facts ?? {},
-        addedAt: saved.addedAt,
-        readyAt: saved.readyAt,
-        log: [`restored from ${path.basename(file)} — built in a previous run.`],
-        built,
+        options: stored.options,
+        facts: stored.facts,
+        addedAt: stored.addedAt,
         lastUsed: Date.now(),
       };
-      this.entries.set(key, entry);
+      if (stored.state === "ready" && stored.built) {
+        this.entries.set(key, {
+          ...base,
+          state: "ready",
+          readyAt: stored.readyAt ?? stored.addedAt,
+          log: ["restored — built in a previous run."],
+          built: { ...stored.built },
+        });
+      } else {
+        const entry: Entry = {
+          ...base,
+          state: "failed",
+          error: stored.error ?? "failed in a previous run",
+          ...(stored.failedAt !== undefined ? { failedAt: stored.failedAt } : {}),
+          log: [`restored — failed in a previous run: ${stored.error ?? "unknown reason"}`],
+        };
+        this.entries.set(key, entry);
+        const kind = stored.failure?.kind;
+        if (kind === "transient" || kind === "config") {
+          // A restart is when the network is back or the token is fixed:
+          // the retry these two were waiting for.
+          this.requeue(entry, "retrying after restart");
+        } else if (stored.failure) {
+          entry.failure = { ...stored.failure, parked: true, nextRetryAt: undefined };
+        }
+      }
+      restored++;
     }
-    if (this.entries.size > 0) {
-      this.log(`restored ${this.entries.size} ready PR${this.entries.size === 1 ? "" : "s"} from ${file}.`);
-    }
+    if (restored > 0) this.log(`restored ${restored} PR${restored === 1 ? "" : "s"}.`);
   }
 
   /**
-   * Write every ready PR to the state file, whole. A handful of PRs and a
-   * change every few minutes at the busiest; nothing here is worth batching.
-   * A write that fails is logged and otherwise ignored — a server that
-   * cannot keep its memory should still serve what it holds.
-   *
-   * Only ready PRs are worth keeping. A queued or building one has nothing
-   * built yet, so restoring it would only mean redoing the same work — and
+   * Write one PR's record: ready with what it built, or failed with why. A
+   * queued or building one is not written — there is nothing built yet, and
    * a build is a promise on this process's event loop, which does not
-   * survive the process; it is dropped and comes back when it is added
-   * again, as the watcher does on its next poll. A failed one has nothing
-   * costly to lose, and forgetting it means the next add retries it, which
-   * is what a reader restarting the server after fixing whatever failed
-   * wants anyway.
+   * survive the process; it comes back when it is added again, as the
+   * watcher does on its next poll. A write that fails is logged and
+   * otherwise ignored — a server that cannot keep its memory should still
+   * serve what it holds.
    */
-  private persist(): void {
-    if (!this.stateFile) return;
-    const prs: SavedPr[] = [];
-    for (const entry of this.entries.values()) {
-      if (entry.state !== "ready" || !entry.built || entry.readyAt === undefined) continue;
-      prs.push({
+  private persist(entry: Entry): void {
+    if (!this.persistence) return;
+    let record: StoredPr;
+    if (entry.state === "ready" && entry.built && entry.readyAt !== undefined) {
+      const built = entry.built;
+      record = {
+        version: 1,
+        state: "ready",
         owner: entry.owner,
         repo: entry.repo,
         number: entry.number,
@@ -624,17 +793,38 @@ export class PrRegistry {
         facts: entry.facts,
         addedAt: entry.addedAt,
         readyAt: entry.readyAt,
-        built: entry.built,
-      });
+        built,
+      };
+    } else if (entry.state === "failed") {
+      record = {
+        version: 1,
+        state: "failed",
+        owner: entry.owner,
+        repo: entry.repo,
+        number: entry.number,
+        options: entry.options,
+        facts: entry.facts,
+        addedAt: entry.addedAt,
+        error: entry.error ?? "failed",
+        ...(entry.failedAt !== undefined ? { failedAt: entry.failedAt } : {}),
+        ...(entry.failure
+          ? {
+              failure: {
+                kind: entry.failure.kind,
+                attempts: entry.failure.attempts,
+                firstFailedAt: entry.failure.firstFailedAt,
+                ...(entry.failure.headSha ? { headSha: entry.failure.headSha } : {}),
+              },
+            }
+          : {}),
+      };
+    } else {
+      return;
     }
-    const snapshot: SavedRegistry = { version: 1, prs };
     try {
-      mkdirSync(path.dirname(this.stateFile), { recursive: true });
-      writeFileSync(this.stateFile, JSON.stringify(snapshot));
+      this.persistence.store.save(record);
     } catch (error) {
-      this.log(
-        `could not write ${this.stateFile}: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      this.log(`${entry.key}: could not save — ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -658,6 +848,7 @@ export class PrRegistry {
       ...(input ? { graphs: input.slices.filter((s) => s.graph).length } : {}),
       ...(input ? { size: explorerSize(input) } : {}),
       ...(entry.error ? { error: entry.error } : {}),
+      ...(entry.failure ? { failure: { ...entry.failure } } : {}),
       addedAt: entry.addedAt,
       ...(entry.readyAt !== undefined ? { readyAt: entry.readyAt } : {}),
       ...(entry.built?.headSha ? { headSha: entry.built.headSha } : {}),

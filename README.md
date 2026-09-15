@@ -1,6 +1,8 @@
 # Deep Review
 
-A full-stack TypeScript tool for code review.
+A local tool for reading pull requests: an agent slices the PR into the
+changes that matter, and a call-graph walker lets you follow each slice
+through the code that calls it and the code it calls.
 
 Project vocabulary lives in [CONTEXT.md](./CONTEXT.md).
 
@@ -8,7 +10,7 @@ Project vocabulary lives in [CONTEXT.md](./CONTEXT.md).
 
 ```sh
 pnpm install
-pnpm dev        # server on :3001, web on :5173
+pnpm build      # the client app the server serves, and the pr-review CLI
 ```
 
 Authenticate to GitHub once. Nothing here shells out to `gh`, so the login on
@@ -72,8 +74,8 @@ pnpm --filter @deep-review/review cli stop
 
 After `pnpm build`, the same CLI is on your path as `pr-review`, so those read
 `pr-review 2950 --repo vercel/swr`. `--help` lists every flag, including
-`--max-graphs <n>` to cap the slow call-graph analysis, `--save <file>` to keep
-this run's slice JSON, and `--out <file>` for a static copy of the page.
+`--max-graphs <n>` to cap the slow call-graph analysis. Every run's slice JSON
+is kept under `~/.deep-review/slices/` for `--slices` to reuse.
 
 Environment: a model key is required unless `--slices` is given —
 `OPENAI_API_KEY` for the default model (`gpt-5.6-sol`), `ANTHROPIC_API_KEY` for
@@ -86,13 +88,11 @@ there instead of being passed per invocation.
 
 ## Structure
 
-- `apps/server` — [Hono](https://hono.dev) API on Node. Reviews and findings, backed by an in-memory store (swap in a database via `src/store.ts`).
-- `apps/web` — Vite + React UI. Proxies `/api` to the server in dev.
-- `packages/shared` — Zod schemas and types shared by both (reviews, findings, severities).
 - `packages/pr` — one PR's raw material: URL parsing, GitHub metadata, linked Linear tickets, base/head worktrees, and unified-diff parsing. Depended on by the two analysis packages below.
-- `packages/call-graph` — analyze how a function's callers/callees change across a GitHub PR, using the TypeScript language service's call hierarchy. Includes an HTML report generator and CLI.
-- `packages/slicer` — break a PR's diff into prioritized slices with an agent. Includes a CLI.
-- `packages/review` — the two together: slices on the vertical axis, call graphs on the horizontal. Includes the `pr-review` CLI.
+- `packages/call-graph` — analyze how a function's callers/callees change across a GitHub PR, using the TypeScript language service's call hierarchy (and Pyright for Python). Also renders the explorer pages.
+- `packages/slicer` — break a PR's diff into prioritized slices with an agent.
+- `packages/review` — the two together: slices on the vertical axis, call graphs on the horizontal. The `pr-review` CLI, the local server and its API, the watcher.
+- `packages/ui` — the client app (React + Vite, CSS modules): the index, the building placeholder and the explorer, rendered in the browser from the server's JSON. `pnpm --filter @deep-review/ui dev` runs it with hot reload against a running server.
 
 
 
@@ -103,22 +103,14 @@ Run from the repo root:
 
 | Command          | What it does                           |
 | ---------------- | -------------------------------------- |
-| `pnpm dev`       | Start server and web app in watch mode |
-| `pnpm build`     | Build every package                    |
+| `pnpm build`     | Build the client app (which the server serves) and the CLI |
 | `pnpm typecheck` | Type-check every package               |
 | `pnpm test`      | Run all tests (Vitest)                 |
+| `pnpm e2e`       | Compare the pages against their visual baselines (Playwright, Chromium) |
+| `pnpm e2e:update` | Re-take the baselines after a deliberate visual change |
 
 
 
-
-## API
-
-- `GET /api/health`
-- `GET /api/reviews` · `POST /api/reviews`
-- `GET /api/reviews/:id` · `PATCH /api/reviews/:id/status`
-- `GET /api/reviews/:id/findings` · `POST /api/reviews/:id/findings`
-
-Request/response shapes live in `packages/shared/src/index.ts`.
 
 ## Watching your assigned PRs
 
@@ -206,6 +198,15 @@ means a paid slicing run. What GitHub says about a PR already handed over —
 its approval, above all — is passed along on every check without a rebuild. Anything that drops out of the list is forgotten, so
 approving a PR and having it reassigned, or unassigning and reassigning, is
 the deliberate way to ask for it again.
+
+A build that fails says what kind of failure it was, and that decides what
+happens next. A network failure is retried on a backoff (one minute, two,
+five, fifteen, thirty, then hourly) for a day. A failure in our own pipeline
+gets one more try, since the model is not deterministic, then parks until
+the PR's head moves. A setup problem (no token, a bad key) or a problem with
+the PR itself (a diff too large to slice) parks at once, with the reason on
+the card. Every failed card has a retry button, and a restart retries the
+network and setup failures, since a restart is when those get fixed.
 
 Once a PR is merged or closed, its page leaves the server's index on the next  
 check, so the index shows only what can still be acted on. Leaving the list is  

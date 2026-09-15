@@ -30,6 +30,7 @@ function assigned(number: number, updatedAt = "2026-09-01T10:00:00Z"): AssignedP
     author: "someone",
     approved: false,
     approvers: [],
+    headSha: "h",
   };
 }
 
@@ -135,8 +136,8 @@ describe("pollOnce", () => {
       },
     });
     expect(facts).toEqual([
-      { role: "authored", approved: false, approvers: [], author: "me", draft: true },
-      { role: "review", approved: true, approvers: ["alex"], author: "someone", draft: false },
+      { role: "authored", approved: false, approvers: [], author: "me", draft: true, headSha: "h" },
+      { role: "review", approved: true, approvers: ["alex"], author: "someone", draft: false, headSha: "h" },
     ]);
   });
 
@@ -161,7 +162,7 @@ describe("pollOnce", () => {
     await pollOnce({ ...deps, list: async () => [{ ...assigned(1), approved: true, approvers: ["alex"] }] });
     expect(handed).toEqual([1]);
     expect(refreshed).toEqual([
-      ["acme/widgets#1", { role: "review", approved: true, approvers: ["alex"], author: "someone", draft: false }],
+      ["acme/widgets#1", { role: "review", approved: true, approvers: ["alex"], author: "someone", draft: false, headSha: "h" }],
     ]);
   });
 
@@ -228,7 +229,6 @@ describe("pollOnce", () => {
       },
     });
     expect(handed).toBeDefined();
-    expect(handed).not.toHaveProperty("workDir");
   });
 
   it("survives a corrupt state file rather than refusing to start", () => {
@@ -313,6 +313,29 @@ describe("planCleanup", () => {
       return OPEN;
     });
     expect(asked.map((ref) => ref.number)).toEqual([2]);
+  });
+
+  it("asks about a still-open PR again only after a while, not every poll", async () => {
+    // Approved-but-open PRs sit outside the query for days; asking GitHub
+    // about each of them every five minutes was the watcher's biggest cost.
+    const asked: number[] = [];
+    const check = async (ref: PrRef) => {
+      asked.push(ref.number);
+      return OPEN;
+    };
+    const t0 = 1_000_000;
+    const first = await planCleanup({ "acme/widgets#1": heldPr() }, [], check, () => {}, { now: t0, recheckMs: 600 });
+    expect(asked).toEqual([1]);
+    expect(first.held["acme/widgets#1"]!.checkedAt).toBe(t0);
+    // Too soon: not asked. Late enough: asked, and the time moves on.
+    await planCleanup(first.held, [], check, () => {}, { now: t0 + 500, recheckMs: 600 });
+    expect(asked).toEqual([1]);
+    const third = await planCleanup(first.held, [], check, () => {}, { now: t0 + 700, recheckMs: 600 });
+    expect(asked).toEqual([1, 1]);
+    expect(third.held["acme/widgets#1"]!.checkedAt).toBe(t0 + 700);
+    // Once it is merged, the wait does not save it.
+    const done = await planCleanup(third.held, [], async () => MERGED, () => {}, { now: t0 + 100_000, recheckMs: 600 });
+    expect(done.finished).toEqual(["acme/widgets#1"]);
   });
 
   it("keeps a PR whose check failed, and finishes the others", async () => {
@@ -505,11 +528,11 @@ describe("pollOnce across repos", () => {
     // watcher asked for every PR the token could see, and six from a
     // personal repo nobody meant to watch landed on the server. Now a repo
     // is queried only by being named — the fake GitHub has PRs waiting in
-    // adambossy/panoply, and is never asked for them.
+    // elsewhere/panoply, and is never asked for them.
     watching("acme/widgets");
     const gh = github({
       "acme/widgets": [inRepo("acme/widgets", 1)],
-      "adambossy/panoply": [inRepo("adambossy/panoply", 3), inRepo("adambossy/panoply", 4)],
+      "elsewhere/panoply": [inRepo("elsewhere/panoply", 3), inRepo("elsewhere/panoply", 4)],
     });
     const handed: string[] = [];
     const state = await pollOnce({
@@ -538,7 +561,7 @@ describe("pollOnce across repos", () => {
     // Not an error: a fresh install has no file. But not silence either,
     // and above all not "everything" — the absence of a scope used to mean
     // the widest one, and that is the reading this removes.
-    const gh = github({ "adambossy/panoply": [inRepo("adambossy/panoply", 3)] });
+    const gh = github({ "elsewhere/panoply": [inRepo("elsewhere/panoply", 3)] });
     const messages: string[] = [];
     const state = await pollOnce({ list: gh.list, onProgress: (m) => messages.push(m) });
     expect(gh.asked).toEqual([]);
@@ -550,7 +573,7 @@ describe("pollOnce across repos", () => {
 
   it("polls nothing, and says so, when the file lists no repos", async () => {
     writeFileSync(watchConfigFile(), JSON.stringify({ repos: {} }));
-    const gh = github({ "adambossy/panoply": [inRepo("adambossy/panoply", 3)] });
+    const gh = github({ "elsewhere/panoply": [inRepo("elsewhere/panoply", 3)] });
     const messages: string[] = [];
     await pollOnce({ list: gh.list, onProgress: (m) => messages.push(m) });
     expect(gh.asked).toEqual([]);
@@ -562,7 +585,7 @@ describe("pollOnce across repos", () => {
     // also stops removing merged PRs from the server. And it must not be
     // read as "no scope", which used to mean the widest scope.
     writeFileSync(watchConfigFile(), "{ this is not json");
-    const gh = github({ "adambossy/panoply": [inRepo("adambossy/panoply", 3)] });
+    const gh = github({ "elsewhere/panoply": [inRepo("elsewhere/panoply", 3)] });
     const messages: string[] = [];
     const state = await pollOnce({ list: gh.list, onProgress: (m) => messages.push(m) });
     expect(gh.asked).toEqual([]);
@@ -574,7 +597,7 @@ describe("pollOnce across repos", () => {
     // A second repo: qualifier widens a GitHub search rather than narrowing
     // it, so an entry that carries one could reach into a repo the file
     // never named. It is left out, with a note, and the others go ahead.
-    watching(["acme/widgets", "is:open repo:adambossy/panoply"], "acme/gadgets");
+    watching(["acme/widgets", "is:open repo:elsewhere/panoply"], "acme/gadgets");
     const gh = github({});
     const messages: string[] = [];
     await pollOnce({ list: gh.list, onProgress: (m) => messages.push(m) });

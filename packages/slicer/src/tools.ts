@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
+import { BuildError } from "@deep-review/pr";
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
 
@@ -15,7 +16,7 @@ function resolveInside(root: string, relative: string): string {
   const resolved = path.resolve(root, relative);
   const prefix = path.resolve(root) + path.sep;
   if (resolved !== path.resolve(root) && !resolved.startsWith(prefix)) {
-    throw new Error(`Path "${relative}" is outside the repository.`);
+    throw new BuildError(`Path "${relative}" is outside the repository.`);
   }
   return resolved;
 }

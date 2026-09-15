@@ -1,9 +1,9 @@
 /**
- * The local navigation server behind rendered explorer pages: serves an
- * index of every PR it holds, each PR's page under its own prefix, and
- * answers those pages' questions about symbols — where one is defined, who
- * calls it, what its panel looks like — from language services kept warm
- * over that PR's head checkout.
+ * The local navigation server behind the client app: serves the app itself
+ * at `/` and under each PR's own prefix, the registry and each PR's build
+ * input as JSON, and answers the app's questions about symbols — where one
+ * is defined, who calls it, what its panel looks like — from language
+ * services kept warm over that PR's head checkout.
  *
  * Loopback only, and long-lived: one server holds however many PRs you are
  * reading, PRs are added to a running one from any terminal, and a page
@@ -12,11 +12,12 @@
  */
 
 import { createRequire } from "node:module";
+import { existsSync, readFileSync } from "node:fs";
+import nodePath from "node:path";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import process from "node:process";
 import type { AddressInfo } from "node:net";
-import { renderSliceExplorerHtml, type SliceExplorerInput } from "@deep-review/call-graph";
-import { renderBuildingPage, renderIndexPage } from "./indexPage.js";
+import { escapeHtml as esc } from "@deep-review/call-graph";
 import {
   parsePrPath,
   PrRegistry,
@@ -24,8 +25,8 @@ import {
   prMountPath,
   type AddOptions,
   type BuildPr,
-  type BuiltPr,
   type PrFacts,
+  type RegistryOptions,
   type PrRef,
   type PrView,
 } from "./registry.js";
@@ -61,10 +62,19 @@ export interface NavServerOptions {
   /** Let a PR's language services go after this long with no question asked. */
   sessionIdleMs?: number | undefined;
   onProgress?: ((message: string) => void) | undefined;
-  /** Where the registry remembers its ready PRs between runs; see `RegistryOptions.stateFile`. */
-  stateFile?: string | undefined;
-  /** Re-renders a restored PR's page from its input; see `RegistryOptions.rerender`. */
-  rerender?: ((built: BuiltPr) => string) | undefined;
+  /** Where PRs are remembered between runs and how their pages come back; see `RegistryOptions.persistence`. */
+  persistence?: RegistryOptions["persistence"];
+  /** Release a dropped PR's checkouts; see `RegistryOptions.onRemoved`. */
+  onRemoved?: RegistryOptions["onRemoved"];
+  /** When failed builds are retried; see `RegistryOptions.retry`. */
+  retry?: RegistryOptions["retry"];
+  /**
+   * The built client app (packages/ui/dist): its index.html is every page
+   * this server serves, and its assets go under `/assets/`. Without a build
+   * there — the directory missing, or `pnpm build` never run — every page
+   * answers 503 saying so.
+   */
+  uiDir?: string | undefined;
 }
 
 export interface NavServer {
@@ -95,6 +105,31 @@ function sendText(res: ServerResponse, status: number, type: string, body: strin
 
 function sendHtml(res: ServerResponse, status: number, html: string): void {
   sendText(res, status, "text/html; charset=utf-8", html);
+}
+
+const ASSET_TYPES: Record<string, string> = {
+  ".js": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".map": "application/json; charset=utf-8",
+  ".png": "image/png",
+  ".svg": "image/svg+xml",
+  ".woff2": "font/woff2",
+  ".ico": "image/x-icon",
+};
+
+/** The client app's files, if a build is there: index.html for `/`, hashed assets under `/assets/`. */
+function clientApp(uiDir: string | undefined): { index: () => string | null; asset: (name: string) => { body: Buffer; type: string } | null } {
+  const indexFile = uiDir ? nodePath.join(uiDir, "index.html") : null;
+  return {
+    index: () => (indexFile && existsSync(indexFile) ? readFileSync(indexFile, "utf8") : null),
+    asset: (name) => {
+      if (!uiDir || name.includes("..") || name.includes("/")) return null;
+      const file = nodePath.join(uiDir, "assets", name);
+      if (!existsSync(file)) return null;
+      const type = ASSET_TYPES[nodePath.extname(name)];
+      return type ? { body: readFileSync(file), type } : null;
+    },
+  };
 }
 
 function intParam(url: URL, name: string): number | null {
@@ -156,10 +191,24 @@ export async function startNavServer(options: NavServerOptions): Promise<NavServ
     ...(options.concurrency !== undefined ? { concurrency: options.concurrency } : {}),
     ...(options.sessionGraceMs !== undefined ? { sessionGraceMs: options.sessionGraceMs } : {}),
     ...(options.sessionIdleMs !== undefined ? { sessionIdleMs: options.sessionIdleMs } : {}),
-    ...(options.stateFile !== undefined ? { stateFile: options.stateFile } : {}),
-    ...(options.rerender !== undefined ? { rerender: options.rerender } : {}),
+    ...(options.persistence !== undefined ? { persistence: options.persistence } : {}),
+    ...(options.onRemoved !== undefined ? { onRemoved: options.onRemoved } : {}),
+    ...(options.retry !== undefined ? { retry: options.retry } : {}),
     onProgress: log,
   });
+
+  const app = clientApp(options.uiDir);
+
+  /**
+   * Every page this server serves is the client app's index.html. Without a
+   * build it can only say so: 503, since the server is up and the page it
+   * would serve is simply not there yet.
+   */
+  const sendApp = (res: ServerResponse): void => {
+    const page = app.index();
+    if (page) sendHtml(res, 200, page);
+    else sendHtml(res, 503, NOT_BUILT);
+  };
 
   let resolveClosed: () => void = () => {};
   const closed = new Promise<void>((resolve) => {
@@ -172,8 +221,11 @@ export async function startNavServer(options: NavServerOptions): Promise<NavServ
     if (stopped) return closed;
     stopped = true;
     registry.dispose();
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    // Connections first, then the listener: close() waits for every open
+    // connection to end, and an /events stream never does on its own — a
+    // stop with one browser tab open hung the server forever.
     server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
     resolveClosed();
     return closed;
   };
@@ -313,6 +365,51 @@ export async function startNavServer(options: NavServerOptions): Promise<NavServ
       sendText(res, 405, "text/plain", "method not allowed");
       return;
     }
+    // What changes, as it changes: a snapshot of every PR, then a `pr` event
+    // per change and a `removed` per drop. Pages listen here instead of
+    // polling; a comment every 15 s keeps proxies from closing a quiet stream.
+    if (method === "GET" && path === "/events") {
+      res.writeHead(200, {
+        ...NO_STORE,
+        "Content-Type": "text/event-stream; charset=utf-8",
+        Connection: "keep-alive",
+      });
+      const send = (event: string, data: unknown): void => {
+        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      };
+      send("snapshot", { prs: registry.list() });
+      const unsubscribe = registry.subscribe((event) => send(event.type, event));
+      const heartbeat = setInterval(() => res.write(": ping\n\n"), 15_000);
+      req.on("close", () => {
+        clearInterval(heartbeat);
+        unsubscribe();
+      });
+      return;
+    }
+    // A ready PR's page input as JSON — for a client that renders the page
+    // itself rather than taking the server's HTML.
+    const inputRoute = /^\/prs\/([^/]+)\/input$/.exec(path);
+    if (inputRoute && method === "GET") {
+      let key: string;
+      try {
+        key = decodeURIComponent(inputRoute[1]!);
+      } catch {
+        sendJson(res, 404, { why: "no such PR on this server" });
+        return;
+      }
+      const pr = registry.get(key);
+      if (!pr) {
+        sendJson(res, 404, { why: "no such PR on this server" });
+        return;
+      }
+      const input = registry.input(key);
+      if (!input) {
+        sendJson(res, 409, { why: `not built yet (${pr.state})`, state: pr.state });
+        return;
+      }
+      sendJson(res, 200, input);
+      return;
+    }
     if (path.startsWith("/prs/") && (method === "DELETE" || method === "PATCH")) {
       let key: string;
       try {
@@ -373,14 +470,10 @@ export async function startNavServer(options: NavServerOptions): Promise<NavServ
         return;
       }
       if (route.rest === "/") {
-        const html = registry.html(route.key);
-        if (html) {
-          registry.pageAlive(route.key);
-          sendHtml(res, 200, html);
-        } else {
-          // Not built yet (or the build failed): a page that watches for it.
-          sendHtml(res, 200, renderBuildingPage(pr));
-        }
+        // A PR's page is the client app: it reads the registry's stream and
+        // this PR's input and renders the explorer or the placeholder
+        // itself. Every question below this line is answered the same way.
+        sendApp(res);
         return;
       }
       await handleNav(route.key, route.rest, url, res);
@@ -392,7 +485,18 @@ export async function startNavServer(options: NavServerOptions): Promise<NavServ
       return;
     }
     if (path === "/") {
-      sendHtml(res, 200, renderIndexPage(registry.list(), VERSION));
+      sendApp(res);
+      return;
+    }
+    if (path.startsWith("/assets/")) {
+      const asset = app.asset(path.slice("/assets/".length));
+      if (!asset) {
+        sendText(res, 404, "text/plain", "not found");
+        return;
+      }
+      // Hashed names: safe to cache for as long as the browser likes.
+      res.writeHead(200, { "Content-Type": asset.type, "Cache-Control": "public, max-age=31536000, immutable" });
+      res.end(asset.body);
       return;
     }
     if (path === "/favicon.ico") {
@@ -433,49 +537,22 @@ export async function startNavServer(options: NavServerOptions): Promise<NavServ
   };
 }
 
+/**
+ * What every page is when the client app has not been built: static text,
+ * nothing from the request in it, so the one thing to do about it is plain.
+ */
+const NOT_BUILT = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Deep Review — the client app is not built</title></head>
+<body><h1>The client app is not built.</h1>
+<p>Every page this server serves is the client app in <code>packages/ui</code>, and there is no build of it here.</p>
+<p>Run <code>pnpm build</code> in the checkout, then reload.</p></body></html>
+`;
+
+/** The key comes from the URL, so it is escaped: a loopback origin that also accepts POST /quit is no place for reflected markup. */
 function notHere(key: string): string {
   return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>${key} — not loaded</title></head>
-<body><p><code>${key}</code> is not loaded on this server.</p>
+<html lang="en"><head><meta charset="utf-8"><title>${esc(key)} — not loaded</title></head>
+<body><p><code>${esc(key)}</code> is not loaded on this server.</p>
 <p><a href="/">Every PR that is</a></p></body></html>
 `;
-}
-
-export interface ServeOptions {
-  /** The PR's head checkout the language services read. */
-  headDir: string;
-  /** What to render and serve; the session renders more panels from it. */
-  input: SliceExplorerInput;
-  port?: number | undefined;
-  sessionGraceMs?: number | undefined;
-  onProgress?: ((message: string) => void) | undefined;
-}
-
-/**
- * A server holding a single already-built PR — what `--no-daemon` runs, and
- * the shape the tests exercise. The page is rendered here rather than taken
- * from the caller so its `navBase` matches where the server mounts it; a
- * static `--out` copy is rendered separately, without one.
- */
-export async function serveExplorer(
-  options: ServeOptions,
-): Promise<NavServer & { pageUrl: string }> {
-  const [owner = "unknown", repo = "unknown"] = options.input.repo.split("/");
-  const ref: PrRef = { owner, repo, number: options.input.number };
-  const server = await startNavServer({
-    build: ({ navBase }) => {
-      const input = { ...options.input, navBase };
-      return Promise.resolve({
-        input,
-        headDir: options.headDir,
-        html: renderSliceExplorerHtml(input),
-      });
-    },
-    ...(options.port !== undefined ? { port: options.port } : {}),
-    ...(options.sessionGraceMs !== undefined ? { sessionGraceMs: options.sessionGraceMs } : {}),
-    ...(options.onProgress ? { onProgress: options.onProgress } : {}),
-  });
-  server.add(ref);
-  await server.registry.settled();
-  return { ...server, pageUrl: server.urlFor(ref) };
 }

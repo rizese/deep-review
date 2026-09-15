@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { BuildError, ConfigError, InputError, TransientError } from "./errors.js";
 import {
   assignedPrsQuery,
   authoredPrsQuery,
@@ -101,6 +102,91 @@ describe("fetchPrInfo", () => {
     expect(info.state).toBe("closed");
     expect(info.merged).toBe(true);
   });
+
+  it("reads a public PR with no token at all", async () => {
+    delete process.env.GITHUB_TOKEN;
+    delete process.env.GH_TOKEN;
+    const sent: (Record<string, string> | undefined)[] = [];
+    vi.stubGlobal("fetch", async (_url: string, init: { headers: Record<string, string> }) => {
+      sent.push(init.headers);
+      return new Response(JSON.stringify(response));
+    });
+    await expect(fetchPrInfo({ owner: "acme", repo: "widgets", number: 1 })).resolves.toMatchObject({
+      title: "t",
+    });
+    expect(sent[0]).not.toHaveProperty("Authorization");
+  });
+});
+
+describe("a failed GitHub call", () => {
+  const saved = { github: process.env.GITHUB_TOKEN, gh: process.env.GH_TOKEN };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env.GITHUB_TOKEN;
+    delete process.env.GH_TOKEN;
+    if (saved.github !== undefined) process.env.GITHUB_TOKEN = saved.github;
+    if (saved.gh !== undefined) process.env.GH_TOKEN = saved.gh;
+  });
+
+  /** The error `fetchPrInfo` rejects with when GitHub answers like this. */
+  const failure = async (init: ResponseInit): Promise<unknown> => {
+    vi.stubGlobal("fetch", async () => new Response("{}", init));
+    return fetchPrInfo({ owner: "acme", repo: "widgets", number: 1 }).then(
+      () => {
+        throw new Error("expected the call to fail");
+      },
+      (error: unknown) => error,
+    );
+  };
+
+  it("tells a repo it cannot see from a PR that is not there, by whether a token was sent", async () => {
+    // The same 404 means two different things. Unauthenticated it is almost
+    // always a private repo this machine has no key for — config, and no
+    // amount of retrying helps. With a token in hand GitHub really is saying
+    // the PR does not exist or is not visible: the input was wrong.
+    delete process.env.GITHUB_TOKEN;
+    delete process.env.GH_TOKEN;
+    const anonymous = await failure({ status: 404 });
+    expect(anonymous).toBeInstanceOf(ConfigError);
+    expect((anonymous as Error).message).toContain("(private repo? set GITHUB_TOKEN)");
+
+    process.env.GITHUB_TOKEN = "t";
+    const authenticated = await failure({ status: 404 });
+    expect(authenticated).toBeInstanceOf(InputError);
+    expect((authenticated as Error).message).toContain("GitHub API returned 404");
+    expect((authenticated as Error).message).not.toContain("private repo");
+  });
+
+  it("reads a rejected token as config and a server fault as transient", async () => {
+    process.env.GITHUB_TOKEN = "t";
+    expect(await failure({ status: 401 })).toBeInstanceOf(ConfigError);
+    expect(await failure({ status: 403 })).toBeInstanceOf(ConfigError);
+    expect(await failure({ status: 503 })).toBeInstanceOf(TransientError);
+    expect(await failure({ status: 422 })).toBeInstanceOf(InputError);
+  });
+
+  it("carries GitHub's own wait out of a rate limit", async () => {
+    process.env.GITHUB_TOKEN = "t";
+    const retryAfter = await failure({ status: 429, headers: { "Retry-After": "30" } });
+    expect(retryAfter).toBeInstanceOf(TransientError);
+    expect((retryAfter as TransientError).retryAfterMs).toBe(30_000);
+
+    // The plain rate limit comes with a reset instant instead of a duration.
+    const reset = Math.floor(Date.now() / 1000) + 60;
+    const rateLimited = await failure({
+      status: 429,
+      headers: { "x-ratelimit-reset": String(reset) },
+    });
+    expect(rateLimited).toBeInstanceOf(TransientError);
+    const ms = (rateLimited as TransientError).retryAfterMs ?? 0;
+    expect(ms).toBeGreaterThan(50_000);
+    expect(ms).toBeLessThanOrEqual(60_000);
+
+    // Nothing said: still transient, just with no instruction to follow.
+    const bare = await failure({ status: 429 });
+    expect((bare as TransientError).retryAfterMs).toBeUndefined();
+  });
 });
 
 describe("listWatchedPrs", () => {
@@ -197,9 +283,38 @@ describe("listWatchedPrs", () => {
   });
 
   it("refuses to search without a token, and surfaces GraphQL errors", async () => {
+    delete process.env.GH_TOKEN;
     await expect(listWatchedPrs({ repo: "acme/widgets" })).rejects.toThrow(/GITHUB_TOKEN/);
+    await expect(listWatchedPrs({ repo: "acme/widgets" })).rejects.toBeInstanceOf(ConfigError);
     process.env.GITHUB_TOKEN = "t";
     vi.stubGlobal("fetch", async () => new Response(JSON.stringify({ errors: [{ message: "nope" }] })));
     await expect(listWatchedPrs({ repo: "acme/widgets" })).rejects.toThrow(/nope/);
+    await expect(listWatchedPrs({ repo: "acme/widgets" })).rejects.toBeInstanceOf(BuildError);
+  });
+
+  it("reads the GraphQL errors it can act on: a rate limit waits, a bad token is setup", async () => {
+    // GraphQL answers 200 whatever happened, so the status says nothing and
+    // the messages are the only evidence of which failure this was.
+    process.env.GITHUB_TOKEN = "t";
+    const answering = (errors: { message: string; type?: string }[]) => {
+      vi.stubGlobal("fetch", async () => new Response(JSON.stringify({ errors })));
+      return listWatchedPrs({ repo: "acme/widgets" });
+    };
+    await expect(answering([{ message: "API rate limit exceeded" }])).rejects.toBeInstanceOf(
+      TransientError,
+    );
+    await expect(
+      answering([{ message: "too many requests", type: "RATE_LIMITED" }]),
+    ).rejects.toBeInstanceOf(TransientError);
+    await expect(answering([{ message: "Bad credentials" }])).rejects.toBeInstanceOf(ConfigError);
+    await expect(
+      answering([{ message: "Resource not accessible by integration" }]),
+    ).rejects.toBeInstanceOf(ConfigError);
+  });
+
+  it("refuses a query that names a repo as a setup mistake", () => {
+    expect(() => assignedPrsQuery({ repo: "acme/widgets", query: "is:open repo:acme/other" })).toThrow(
+      ConfigError,
+    );
   });
 });

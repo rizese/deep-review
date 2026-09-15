@@ -1,3 +1,10 @@
+import {
+  BuildError,
+  ConfigError,
+  type DeepReviewError,
+  InputError,
+  TransientError,
+} from "./errors.js";
 import type { PrRef } from "./prUrl.js";
 
 export interface PrInfo extends PrRef {
@@ -28,27 +35,117 @@ interface PrApiResponse {
   head: { ref: string; sha: string };
 }
 
-/** Fetch PR metadata. Uses GITHUB_TOKEN / GH_TOKEN when set (needed for private repos). */
-export async function fetchPrInfo(ref: PrRef): Promise<PrInfo> {
+interface GithubRequest {
+  method?: string;
+  body?: string;
+  headers?: Record<string, string>;
+  /**
+   * The error to fail with when no token is available. Set it only where a
+   * token is genuinely required: the REST endpoints below read public repos
+   * unauthenticated, and the GraphQL one cannot be called at all.
+   */
+  tokenRequired?: string;
+  /**
+   * The message for a non-2xx response, given its status and whether a token
+   * was sent. The caller knows what it asked GitHub for, so it words the
+   * failure; this knows how the asking is done.
+   */
+  failed: (status: number, authenticated: boolean) => string;
+}
+
+/**
+ * How long GitHub asked us to wait, in milliseconds, or undefined when it
+ * said nothing. `Retry-After` is in seconds from now; `x-ratelimit-reset` is
+ * the epoch second the quota refills at, which is the header a plain rate
+ * limit comes with.
+ */
+function retryAfterMs(headers: Headers): number | undefined {
+  const retryAfter = Number(headers.get("retry-after")?.trim());
+  if (Number.isFinite(retryAfter) && retryAfter >= 0) return Math.round(retryAfter * 1000);
+  const reset = Number(headers.get("x-ratelimit-reset")?.trim());
+  if (Number.isFinite(reset)) return Math.max(0, Math.round(reset * 1000 - Date.now()));
+  return undefined;
+}
+
+/**
+ * A non-2xx response as the kind of failure it is. A 404 is the interesting
+ * one: unauthenticated it usually means the repo is private and this machine
+ * cannot see it (config), while with a token in hand it means the PR really
+ * is not there (input).
+ */
+function httpFailure(
+  message: string,
+  status: number,
+  authenticated: boolean,
+  headers: Headers,
+): DeepReviewError {
+  if (status === 401 || status === 403) return new ConfigError(message);
+  if (status === 404) return authenticated ? new InputError(message) : new ConfigError(message);
+  if (status === 429) return new TransientError(message, { retryAfterMs: retryAfterMs(headers) });
+  if (status >= 500) return new TransientError(message);
+  return new InputError(message);
+}
+
+/**
+ * A GraphQL `errors` array as the kind of failure it is. GraphQL answers 200
+ * whatever went wrong, so the only evidence is the messages themselves: a
+ * rate limit is worth retrying, a rejected token is not, and anything else is
+ * a query we got wrong.
+ */
+function graphqlFailure(
+  message: string,
+  errors: { message: string; type?: string }[],
+): DeepReviewError {
+  const text = errors.map((e) => `${e.type ?? ""} ${e.message}`).join("; ");
+  if (text.includes("RATE_LIMITED") || /rate limit/i.test(text)) return new TransientError(message);
+  if (/Bad credentials|Resource not accessible/.test(text)) return new ConfigError(message);
+  return new BuildError(message);
+}
+
+/**
+ * One call to GitHub. Owns the two names its token goes by, the headers
+ * every endpoint wants, and the turn from a non-2xx response into an Error,
+ * so the callers below are left holding only their own question.
+ *
+ * A failure of the fetch itself is deliberately not caught: node throws a
+ * `TypeError` carrying the undici code, which `failureKindOf` reads as the
+ * transient network failure it is, and wrapping it would only bury that.
+ */
+async function githubFetch(url: string, request: GithubRequest): Promise<unknown> {
   const token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
-  const res = await fetch(
-    `https://api.github.com/repos/${ref.owner}/${ref.repo}/pulls/${ref.number}`,
-    {
-      headers: {
-        Accept: "application/vnd.github+json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
+  if (!token && request.tokenRequired) throw new ConfigError(request.tokenRequired);
+  const res = await fetch(url, {
+    ...(request.method !== undefined ? { method: request.method } : {}),
+    ...(request.body !== undefined ? { body: request.body } : {}),
+    headers: {
+      Accept: "application/vnd.github+json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...request.headers,
     },
-  );
+  });
   if (!res.ok) {
-    throw new Error(
-      `GitHub API returned ${res.status} for ${ref.owner}/${ref.repo}#${ref.number}` +
-        (res.status === 404 && !token
-          ? " (private repo? set GITHUB_TOKEN)"
-          : ""),
+    throw httpFailure(
+      request.failed(res.status, Boolean(token)),
+      res.status,
+      Boolean(token),
+      res.headers,
     );
   }
-  const pr = (await res.json()) as PrApiResponse;
+  return res.json();
+}
+
+/** Fetch PR metadata. Uses GITHUB_TOKEN / GH_TOKEN when set (needed for private repos). */
+export async function fetchPrInfo(ref: PrRef): Promise<PrInfo> {
+  const pr = (await githubFetch(
+    `https://api.github.com/repos/${ref.owner}/${ref.repo}/pulls/${ref.number}`,
+    {
+      failed: (status, authenticated) =>
+        `GitHub API returned ${status} for ${ref.owner}/${ref.repo}#${ref.number}` +
+        (status === 404 && !authenticated
+          ? " (private repo? set GITHUB_TOKEN)"
+          : ""),
+    },
+  )) as PrApiResponse;
   return {
     ...ref,
     title: pr.title,
@@ -87,6 +184,8 @@ export interface AssignedPr extends PrRef {
   approved: boolean;
   /** Reviewers whose latest opinionated review is an approval. */
   approvers: string[];
+  /** The head commit right now; a change is what un-parks a failed build. */
+  headSha: string;
 }
 
 /**
@@ -155,7 +254,7 @@ export function authoredPrsQuery(options: WatchedPrQuery): string {
 function scopedQuery(repo: string, query: string): string {
   const clauses = query.trim();
   if (namesRepo(clauses)) {
-    throw new Error(
+    throw new ConfigError(
       `The query for ${repo} names a repo itself (${JSON.stringify(clauses)}); ` +
         "the repo comes from the entry, so leave repo: out of it.",
     );
@@ -171,6 +270,7 @@ interface SearchNode {
   updatedAt?: string;
   isDraft?: boolean;
   reviewDecision?: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null;
+  headRefOid?: string;
   author?: { login: string } | null;
   repository?: { nameWithOwner: string };
   latestOpinionatedReviews?: { nodes: { state: string; author: { login: string } | null }[] };
@@ -178,7 +278,7 @@ interface SearchNode {
 
 interface SearchGraphResponse {
   data?: { review?: { nodes: SearchNode[] }; authored?: { nodes: SearchNode[] } };
-  errors?: { message: string }[];
+  errors?: { message: string; type?: string }[];
 }
 
 /**
@@ -194,7 +294,7 @@ query($review: String!, $authored: String!) {
   authored: search(query: $authored, type: ISSUE, first: 100) { nodes { ...Pr } }
 }
 fragment Pr on PullRequest {
-  number title url updatedAt isDraft reviewDecision
+  number title url updatedAt isDraft reviewDecision headRefOid
   author { login }
   repository { nameWithOwner }
   latestOpinionatedReviews(first: 20) { nodes { state author { login } } }
@@ -225,6 +325,7 @@ function fromNode(node: SearchNode, role: PrRole): AssignedPr | null {
     author: node.author?.login ?? "",
     approved,
     approvers,
+    headSha: node.headRefOid ?? "",
   };
 }
 
@@ -239,24 +340,19 @@ function fromNode(node: SearchNode, role: PrRole): AssignedPr | null {
  * without one. Requires a repo, too; see `AssignedPrQuery`.
  */
 export async function listWatchedPrs(options: WatchedPrQuery): Promise<AssignedPr[]> {
-  const token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
-  if (!token) throw new Error("GITHUB_TOKEN is not set; it is needed to find your PRs.");
   const variables = { review: assignedPrsQuery(options), authored: authoredPrsQuery(options) };
-  const res = await fetch("https://api.github.com/graphql", {
+  const body = (await githubFetch("https://api.github.com/graphql", {
     method: "POST",
-    headers: {
-      Accept: "application/vnd.github+json",
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ query: SEARCH_QUERY, variables }),
-  });
-  if (!res.ok) {
-    throw new Error(`GitHub search returned ${res.status}`);
-  }
-  const body = (await res.json()) as SearchGraphResponse;
+    tokenRequired: "GITHUB_TOKEN is not set; it is needed to find your PRs.",
+    failed: (status) => `GitHub search returned ${status}`,
+  })) as SearchGraphResponse;
   if (body.errors?.length) {
-    throw new Error(`GitHub search: ${body.errors.map((e) => e.message).join("; ")}`);
+    throw graphqlFailure(
+      `GitHub search: ${body.errors.map((e) => e.message).join("; ")}`,
+      body.errors,
+    );
   }
   const byKey = new Map<string, AssignedPr>();
   // Review hits first, authored second, so a PR in both ends up as yours.
@@ -270,9 +366,4 @@ export async function listWatchedPrs(options: WatchedPrQuery): Promise<AssignedP
     }
   }
   return [...byKey.values()];
-}
-
-/** The review list alone; see `listWatchedPrs`. */
-export async function listAssignedPrs(options: AssignedPrQuery): Promise<AssignedPr[]> {
-  return (await listWatchedPrs(options)).filter((pr) => pr.role === "review");
 }

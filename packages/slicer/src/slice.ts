@@ -3,17 +3,32 @@ import {
   extractIssueIdentifiers,
   fetchLinearIssues,
   fetchPrInfo,
+  InputError,
   isLinearConfigured,
   parsePrUrl,
   parseUnifiedDiff,
   prepareCheckouts,
+  type FileDiff,
 } from "@deep-review/pr";
 import { runSliceAgent, type ReasoningEffort } from "./agent.js";
 import { indexDiff, type DiffIndex } from "./annotate.js";
-import type { RenderEntry } from "./html.js";
-import { buildPrompt } from "./prompt.js";
 import { sliceReportSchema } from "./schema.js";
 import type { PrContext, SliceReport } from "./types.js";
+
+/** One PR's report paired with the diff it was produced from. */
+export interface RenderEntry {
+  report: SliceReport;
+  /**
+   * The diff as parsed, before it was indexed and cut into fragments. Kept
+   * alongside the index because a renderer sometimes needs a file's changes
+   * whole, rather than the slice-sized pieces the report addresses.
+   */
+  diff: FileDiff[];
+  index: DiffIndex;
+  /** The worktrees the diff was taken between. */
+  baseDir: string;
+  headDir: string;
+}
 
 export interface SliceOptions {
   prUrl: string;
@@ -71,7 +86,12 @@ async function gatherContext(options: SliceOptions): Promise<PrContext> {
   };
 }
 
-export async function prepare(
+/**
+ * Everything the prompt is built from: the PR's context and its indexed diff.
+ * Split out from `slicePr` because the annotated diff is the contract between
+ * the prompt and the validator, and both are built from this one index.
+ */
+async function prepare(
   options: SliceOptions,
 ): Promise<{ context: PrContext; index: DiffIndex }> {
   const report = options.onProgress ?? (() => {});
@@ -79,22 +99,12 @@ export async function prepare(
 
   const index = indexDiff(parseUnifiedDiff(context.diffText));
   if (index.changedLineCount === 0) {
-    throw new Error("The PR's diff has no changed lines.");
+    throw new InputError("The PR's diff has no changed lines.");
   }
   report(
     `Diff: ${index.hunks.length} hunks, ${index.changedLineCount} changed lines.`,
   );
   return { context, index };
-}
-
-/**
- * The exact prompt the agent would receive. Useful on its own: the annotated
- * diff is the contract between the prompt and the validator, so being able to
- * read it without spending a model call is worth the small amount of API.
- */
-export async function buildSlicePrompt(options: SliceOptions): Promise<string> {
-  const { context, index } = await prepare(options);
-  return buildPrompt(context, index);
 }
 
 /** Slice one PR's diff into prioritized groups of fragments. */
@@ -136,7 +146,7 @@ export function loadSliceReport(reportFile: string): SliceReport {
     JSON.parse(readFileSync(reportFile, "utf8")),
   );
   if (!parsed.success) {
-    throw new Error(
+    throw new InputError(
       `${reportFile} is not a slice report: ${parsed.error.issues
         .map((i) => `${i.path.join(".")} ${i.message}`)
         .join("; ")}`,

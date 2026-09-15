@@ -1,21 +1,12 @@
 export {
-  analyzePrCallGraph,
   analyzePrCallPath,
   embedHeadFiles,
   type AnalyzeOptions,
   type PathOptions,
 } from "./analyze.js";
-export {
-  createCallGraphReport,
-  createCallPathReport,
-  type PathReportOptions,
-  type Report,
-  type ReportOptions,
-} from "./report.js";
-export { renderCallGraphHtml, renderCallGraphColumnsHtml, CSS as REPORT_CSS } from "./html.js";
 export { escapeHtml } from "./highlight.js";
-export { CHROME_CSS, CHROME_JS, THEME_HEAD_JS, renderChrome, type ChromeOptions } from "./chrome.js";
-export { renderCallPathExplorerHtml } from "./explorer.js";
+export { panelRendererFor } from "./sliceExplorer.js";
+export type { PanelRenderer } from "./navSession.js";
 export {
   NavSession,
   type DefinitionAnswer,
@@ -26,15 +17,12 @@ export {
 } from "./navSession.js";
 export {
   explorerFileIndex,
-  renderSliceExplorerHtml,
   type SliceExplorerInput,
   type SliceInput,
   type SliceFragmentInput,
   type FragmentKind,
   explorerSize,
   fragmentSize,
-  renderSizeBreakdown,
-  SIZE_CSS,
   type SizeBreakdown,
 } from "./sliceExplorer.js";
 export type * from "./types.js";

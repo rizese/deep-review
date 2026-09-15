@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { NavSession, type DefinitionAnswer } from "./navSession.js";
+import { panelRendererFor } from "./sliceExplorer.js";
 import type { SliceExplorerInput } from "./sliceExplorer.js";
 import type { CallPathResult, EmbeddedFile, FileDiff } from "./types.js";
 
@@ -98,7 +99,7 @@ const input: SliceExplorerInput = {
   ],
 };
 
-const session = new NavSession(dir, input);
+const session = new NavSession(dir, input, { renderPanel: panelRendererFor(input) });
 afterAll(() => {
   session.dispose();
   rmSync(dir, { recursive: true, force: true });
@@ -199,7 +200,8 @@ describe("NavSession.panel", () => {
 
   it("windows a definition whose file is not on the page", async () => {
     // Without the graph, lib.ts is not embedded and helper is not a node.
-    const bare = new NavSession(dir, { ...input, slices: [{ ...input.slices[0]!, graph: undefined }] });
+    const bareInput = { ...input, slices: [{ ...input.slices[0]!, graph: undefined }] };
+    const bare = new NavSession(dir, bareInput, { renderPanel: panelRendererFor(bareInput) });
     try {
       const helper = await hit("use.ts", 4, 16, bare);
       expect(helper.panelId).toBe(`def:${helper.id}`);
@@ -234,7 +236,8 @@ describe("NavSession.panel", () => {
         ],
       },
     ];
-    const withDiff = new NavSession(dir, { ...input, diff });
+    const diffInput = { ...input, diff };
+    const withDiff = new NavSession(dir, diffInput, { renderPanel: panelRendererFor(diffInput) });
     try {
       const limit = await hit("use.ts", 4, 28, withDiff);
       const panel = (await withDiff.panel(limit.panelId))!;

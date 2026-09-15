@@ -22,11 +22,6 @@ export class Backends {
     return null;
   }
 
-  /** Whether requests to this backend go over a wire and should be issued in parallel. */
-  batched(backend: LanguageBackend): boolean {
-    return backend === this.py;
-  }
-
   dispose(): void {
     this.ts?.dispose();
     this.py?.dispose();

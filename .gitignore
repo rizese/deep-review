@@ -2,7 +2,6 @@ node_modules/
 .pnpm-store/
 dist/
 slices-*.json
-pr-slices.html
 review-*.html
 *.tsbuildinfo
 .env
@@ -12,3 +11,5 @@ coverage/
 .DS_Store
 *.log
 .cache/
+playwright-report/
+test-results/

@@ -1,13 +1,8 @@
 export { parsePrTarget, parsePrUrl, prUrl, type PrRef } from "./prUrl.js";
 export {
   fetchPrInfo,
-  listAssignedPrs,
   listWatchedPrs,
-  assignedPrsQuery,
-  authoredPrsQuery,
   namesRepo,
-  DEFAULT_REVIEW_QUERY,
-  DEFAULT_AUTHORED_QUERY,
   type PrInfo,
   type PrRole,
   type AssignedPr,
@@ -22,7 +17,9 @@ export {
 } from "./diff.js";
 export {
   prepareCheckouts,
-  defaultWorkDir,
+  releaseCheckouts,
+  removeRepoWorkDir,
+  repoWorkRoot,
   type Checkouts,
 } from "./git.js";
 export {
@@ -32,3 +29,13 @@ export {
   type LinearIssue,
 } from "./linear.js";
 export type { DiffHunk, FileDiff } from "./types.js";
+export {
+  DeepReviewError,
+  TransientError,
+  ConfigError,
+  InputError,
+  BuildError,
+  failureKindOf,
+  describeError,
+  type FailureKind,
+} from "./errors.js";

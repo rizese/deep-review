@@ -1,0 +1,150 @@
+/* Ported verbatim from the string renderers in packages/call-graph: the
+   class names below are produced by fileLineHtml/renderLine/gapRow and by
+   the definition panels the navigation server renders, so they stay global.
+   Every value is the one the server-rendered page used. */
+  .tok-kw { color: var(--tok-kw); } .tok-str { color: var(--tok-str); }
+  .tok-com { color: var(--tok-com); font-style: italic; } .tok-num { color: var(--tok-num); }
+  .tok-fn { color: var(--tok-fn); } .tok-type { color: var(--tok-type); }
+  .tok-lit { color: var(--tok-lit); }
+  header h1 { margin-bottom: 0.2rem; letter-spacing: -0.015em; }
+  header .meta { color: var(--ink-soft); font-size: 0.9rem; }
+  header a { color: inherit; }
+  .count { color: var(--ink-faint); font-size: 0.8em; }
+  details.fn { border: 1px solid var(--line-c); border-radius: 8px; margin: 0.5rem 0; background: var(--panel); }
+  details.fn summary { padding: 0.5rem 0.8rem; cursor: pointer; display: flex; gap: 0.6rem; align-items: baseline; flex-wrap: wrap; }
+  details.fn .fn-name { font-weight: 700; }
+  details.fn .fn-file { color: var(--ink-faint); }
+  .badge { font-size: 0.68rem; font-weight: 500; padding: 0.14rem 0.55rem; border-radius: 999px;
+           background: var(--panel-2); color: var(--ink-soft); border: 1px solid var(--line-c);
+           font-variant-numeric: tabular-nums; }
+  .badge.changed { background: rgba(230, 160, 0, 0.14); color: var(--tok-num); border-color: transparent; }
+  .badge.renamed { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+  .badge.added { background: var(--add-bg); color: var(--add-edge); border-color: transparent; }
+  .badge.removed { background: var(--del-bg); color: var(--del-edge); border-color: transparent; }
+  .call-sites-label { font-size: 0.7rem; text-transform: uppercase; color: var(--ink-faint); margin-top: 0.4rem; }
+  .loc { color: var(--ink-faint); font-size: 0.8em; }
+  .missing { color: var(--ink-faint); font-style: italic; }
+  pre.source { overflow-x: auto; background: var(--panel); border: 1px solid var(--line-c); border-radius: 8px; padding: 0.35rem 0; margin: 0.5rem 0 0.2rem; line-height: 1.65; font-family: var(--mono); font-size: 0.78rem; }
+  /* Row backgrounds (diff tint, highlight, focus edge) must reach past the
+     visible edge into the horizontally-scrolled part of a long line. The
+     pre scrolls its content but stays the pane's width, so a row sized to
+     it (100%) only covers what's on screen at load. .lines shrink-wraps
+     to the widest row instead (inline-block, floored at 100%), and each
+     block-level row then fills that — the true scrollable width. */
+  .source .lines { display: inline-block; min-width: 100%; }
+  .source .line { display: block; padding: 0 0.9rem; }
+  .source .lineno { display: inline-block; color: var(--ink-faint); margin-right: 1.1rem; user-select: none; white-space: pre; }
+  /* Markdown panes: wrap long lines instead of scrolling, with a hanging
+     indent so wrapped text lines up under the content column rather than
+     the gutter — the --gutter custom property (digit width of the
+     line-number column) is set per pane since it varies with the file's
+     line count. */
+  pre.source.wrap { white-space: pre-wrap; overflow-x: hidden; }
+  .source.wrap .line { position: relative; overflow-wrap: anywhere; padding-left: calc(0.9rem + var(--gutter, 0) * 1ch + 1.1rem); text-indent: calc(-1 * (var(--gutter, 0) * 1ch + 1.1rem)); }
+  /* text-indent is inherited, so without a reset here the negative indent
+     above applies a second time inside the lineno's own box — an
+     inline-block starts a new block container, so this is not automatic —
+     pushing its digits past the pane's clipped edge. The explicit width
+     matters too: an auto-width inline-block's shrink-to-fit sizing breaks
+     under a negative ancestor indent and resolves to 0. */
+  .source.wrap .lineno { width: calc(var(--gutter, 0) * 1ch); text-indent: 0; }
+  /* A small glyph in the gutter at the start of each visual row a wrapped
+     line continues onto (not the line's first row) — the same spot a line
+     number sits, so a reader scanning the gutter isn't surprised by text
+     that isn't where the line count suggested it would be. Positioned per
+     row by WRAP_JS, since that depends on the pane's rendered width.
+     Generated content, so it never ends up in a copy-pasted selection. */
+  .wrap-tick {
+    /* The line numbers are right-padded (padStart), so a single-digit
+       number sits flush against the gutter's right edge, not centered in
+       it — matching that (rather than centering in the full gutter width)
+       is what actually lines the tick up with the numbers above and
+       below it. */
+    position: absolute; left: 0.9rem; width: calc(var(--gutter, 0) * 1ch); text-align: right;
+    text-indent: 0; color: var(--ink-faint); font-family: var(--mono); line-height: 1;
+    user-select: none; pointer-events: none;
+  }
+  .wrap-tick::before { content: "↳"; }
+  .source .line.hl { background: rgba(230,160,0,0.12); }
+  .source .line.diff-add { background: var(--add-bg); }
+  .source .line.diff-del { background: var(--del-bg); }
+  .source .line.diff-del .lineno { color: var(--del-edge); }
+  .source .line.diff-add .lineno { color: var(--add-edge); }
+  /* Within a changed pair of lines, the words that actually differ. */
+  .source .diff-add-inner { background: var(--add-inner); border-radius: 2px; }
+  .source .diff-del-inner { background: var(--del-inner); border-radius: 2px; }
+  /* The declaration a panel is about, marked along its left edge so it stands
+     out from the context around it without competing with the diff colors. */
+  .source .line.in-focus { box-shadow: inset 3px 0 0 var(--accent); }
+  .source .line.elide { color: var(--ink-faint); font-style: italic; }
+  .callsite { background: var(--callsite-bg); border-radius: 4px; padding: 0.05rem 0; }
+  .csite { color: var(--accent); background: var(--callsite-bg); border-radius: 4px;
+           padding: 0.08em 0.25em; cursor: pointer; transition: background 0.12s; }
+  .csite:hover { background: var(--accent); }
+  .csite:hover, .csite:hover * { color: var(--accent-ink); }
+  .csite.active { outline: 2px solid var(--accent); }
+  .gap { display: flex; align-items: center; gap: 0.8rem; background: var(--panel-2);
+         border-top: 1px solid var(--line-c); border-bottom: 1px solid var(--line-c);
+         padding: 0.22rem 0.9rem; font-family: ui-sans-serif, system-ui, sans-serif;
+         font-size: 0.68rem; color: var(--ink-faint); }
+  .gap.static { cursor: default; }
+  /* Sticky scope header: the file, and the declaration the first visible
+     line is in, pinned to the top of the pane as it scrolls. */
+  /* No overflow clipping on the pane: it would make the pane the sticky
+     header's scroll root instead of the panel. The bar and pre round their
+     own corners. */
+  /* Folding a pane is one transition of the source's max-height between 0
+     and its measured height (--pane-h, set by SCOPE_JS on each click), so
+     closing and opening are the same motion run in opposite directions.
+     Border-box, so the cap at 0 takes the padding and border with it. */
+  .code-pane { position: relative; margin: 0.5rem 0 0.9rem; }
+  .scope-bar {
+    /* .panel's own padding (0.7rem 0.9rem) would otherwise leave a gap
+       above the bar once it sticks. Breaking out with a matching negative
+       margin/top pins it flush to the panel edge instead; the padding
+       below restores the usual text inset. Square on top since it now
+       sits at the panel's true edge, not floating mid-content. */
+    position: sticky; top: -0.7rem; z-index: 2; display: flex; align-items: baseline; gap: 0.15rem;
+    margin: -0.7rem -0.9rem 0; padding: 0.4rem 0.9rem; background: var(--panel-2);
+    /* 8px, like every panel and pane: the bar's top corners meet the panel's
+       own rounded corners when it sticks, and the source's rounded bottom
+       when it does not. Folded, all four corners round. */
+    border: 1px solid var(--line-c); border-bottom: 1px solid transparent; border-radius: 8px 8px 0 0;
+    font-family: var(--mono); font-size: 0.72rem; white-space: nowrap; overflow: hidden;
+    cursor: pointer; user-select: none;
+    transition: border-radius 0.3s cubic-bezier(0.32, 0.72, 0, 1), border-bottom-color 0.3s ease;
+  }
+  .scope-bar:hover { background: var(--accent-soft); }
+  .code-pane.collapsed .scope-bar { border-bottom-color: var(--line-c); border-radius: 8px; }
+  .scope-bar .scope-caret { display: inline-flex; align-self: center; margin-right: 0.3rem; color: var(--ink-faint); }
+  .scope-bar .scope-caret svg {
+    width: 0.8rem; height: 0.8rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+    transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .code-pane.collapsed .scope-caret svg { transform: rotate(-90deg); }
+  .scope-bar .scope-path { color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; }
+  .scope-bar .scope-path .name { color: var(--ink); font-weight: 600; }
+  .scope-bar .scope-sym { color: var(--ink); font-weight: 600; }
+  .scope-bar .scope-sym:not(:empty)::before { content: ":"; color: var(--ink-faint); font-weight: 400; }
+  .scope-bar .stat { margin-left: auto; padding-left: 0.8rem; font-size: 0.68rem; font-variant-numeric: tabular-nums; }
+  .scope-bar .plus { color: var(--add-edge); }
+  .scope-bar .minus { color: var(--del-edge); margin-left: 0.4rem; }
+  .code-pane > pre.source {
+    margin: 0; border-top-left-radius: 0; border-top-right-radius: 0;
+    box-sizing: border-box; overflow-y: hidden;
+    max-height: var(--pane-h, none);
+    /* One curve and one duration for every property that moves, so the
+       fold reads as a single motion and its reverse is the same motion. */
+    transition: max-height 0.3s cubic-bezier(0.32, 0.72, 0, 1), padding 0.3s cubic-bezier(0.32, 0.72, 0, 1),
+      border-width 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  /* Folded to nothing: the padding and border go too, or a sliver of pane
+     and its horizontal scrollbar would stay under the bar. */
+  .code-pane.collapsed > pre.source {
+    max-height: 0; padding-top: 0; padding-bottom: 0; border-top-width: 0; border-bottom-width: 0; overflow: hidden;
+  }
+  .gap-btns { display: inline-flex; align-items: center; gap: 2px; }
+  .gap-btn { border: none; background: none; color: var(--accent); cursor: pointer; font: inherit; font-size: 0.7rem; line-height: 1; padding: 0.05rem 0.3rem; border-radius: 4px; }
+  .gap-btn:hover { background: var(--accent-soft); }
+  .gap-count { color: var(--ink-faint); }
+  .gap-crumb { color: var(--ink-soft); font-family: var(--mono); margin-left: auto; }
