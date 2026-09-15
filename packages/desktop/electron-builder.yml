@@ -18,6 +18,6 @@ mac:
     - dmg
     - zip
 dmg:
-  artifactName: ${name}-${version}.${ext}
+  artifactName: ${productName}-${version}.${ext}
 npmRebuild: false
 publish: null
