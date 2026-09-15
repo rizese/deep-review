@@ -23,7 +23,7 @@ export default defineConfig({
     toHaveScreenshot: { animations: "disabled", caret: "hide", maxDiffPixelRatio: 0.002 },
   },
   webServer: {
-    command: "pnpm --filter @deep-review/ui build && pnpm exec tsx e2e/fixtures/serve.ts",
+    command: "pnpm --filter @deep-review/desktop build && pnpm exec tsx e2e/fixtures/serve.ts",
     url: `http://127.0.0.1:${process.env.E2E_PORT ?? 4545}/health`,
     reuseExistingServer: false,
     timeout: 60_000,

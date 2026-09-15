@@ -18,6 +18,12 @@
     "@deep-review/slicer": "workspace:*"
   },
   "exports": {
-    "./api": "./src/api.ts"
+    "./api": "./src/api.ts",
+    "./daemon": "./src/daemon.ts",
+    "./watcher": "./src/watcher.ts",
+    "./watchConfig": "./src/watchConfig.ts",
+    "./paths": "./src/paths.ts",
+    "./buildWorker": "./src/buildWorker.ts",
+    "./launchAgent": "./src/launchAgent.ts"
   }
 }

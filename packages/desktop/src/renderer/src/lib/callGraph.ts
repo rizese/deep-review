@@ -9,11 +9,11 @@
  * language services); their *types* are, and are re-exported as types only.
  */
 
-export { escapeHtml, identifierMarks, identifiersOf, languageOf, renderLine, tokenizeLines } from "../../../call-graph/src/highlight.js";
-export type { Language, Mark } from "../../../call-graph/src/highlight.js";
+export { escapeHtml, identifierMarks, identifiersOf, languageOf, renderLine, tokenizeLines } from "../../../../../call-graph/src/highlight.js";
+export type { Language, Mark } from "../../../../../call-graph/src/highlight.js";
 
-export { buildFileIndex, fileLineHtml, scopeChainFor, scopeLabelFor } from "../../../call-graph/src/html.js";
-export type { Decorations, FileEntry, FileIndex } from "../../../call-graph/src/html.js";
+export { buildFileIndex, fileLineHtml, scopeChainFor, scopeLabelFor } from "../../../../../call-graph/src/html.js";
+export type { Decorations, FileEntry, FileIndex } from "../../../../../call-graph/src/html.js";
 
 export {
   fileDiffRows,
@@ -22,10 +22,10 @@ export {
   markIntraLine,
   rowsWidth,
   segmentRows,
-} from "../../../call-graph/src/diffView.js";
-export type { DiffRow, LineSpan } from "../../../call-graph/src/diffView.js";
+} from "../../../../../call-graph/src/diffView.js";
+export type { DiffRow, LineSpan } from "../../../../../call-graph/src/diffView.js";
 
-export { renderMarkdown } from "../../../call-graph/src/markdown.js";
+export { renderMarkdown } from "../../../../../call-graph/src/markdown.js";
 
 export type {
   CallPathResult,
@@ -36,7 +36,7 @@ export type {
   ReferenceList,
   SourceSegment,
   SymbolRange,
-} from "../../../call-graph/src/types.js";
+} from "../../../../../call-graph/src/types.js";
 
 export type {
   FragmentKind,
@@ -44,6 +44,6 @@ export type {
   SliceExplorerInput,
   SliceFragmentInput,
   SliceInput,
-} from "../../../call-graph/src/sliceExplorer.js";
+} from "../../../../../call-graph/src/sliceExplorer.js";
 
-export type { DefinitionAnswer, DefinitionResult } from "../../../call-graph/src/navSession.js";
+export type { DefinitionAnswer, DefinitionResult } from "../../../../../call-graph/src/navSession.js";

@@ -12,7 +12,9 @@
     "typecheck": "pnpm -r typecheck && tsc -p e2e/tsconfig.json --noEmit",
     "test": "pnpm -r test",
     "e2e": "playwright test",
-    "e2e:update": "playwright test --update-snapshots"
+    "e2e:update": "playwright test --update-snapshots",
+    "app": "pnpm --filter @deep-review/desktop dev",
+    "app:build": "pnpm --filter @deep-review/desktop build:mac"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
@@ -24,6 +26,9 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
+      "@deep-review/desktop",
+      "electron",
+      "electron-builder",
       "esbuild"
     ]
   }

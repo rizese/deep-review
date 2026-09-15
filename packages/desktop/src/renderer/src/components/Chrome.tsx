@@ -2,6 +2,7 @@ import type { JSX } from "react";
 import { useState, type FormEvent } from "react";
 import wordmark from "../assets/wordmark.png";
 import { addPr, parsePrUrl } from "../lib/api.js";
+import { go } from "../lib/route.js";
 import { useTheme, type Theme } from "../lib/theme.js";
 import styles from "./Chrome.module.css";
 
@@ -88,6 +89,24 @@ export function Chrome({ count }: { count: number }): JSX.Element {
           </form>
         )}
       </div>
+      {/* Only the desktop app has settings to reach; in a browser the bar is
+          exactly what it was. */}
+      {typeof window !== "undefined" && window.electronAPI && (
+        <div className={`${styles.glass} ${styles.settings}`}>
+          <button
+            className={styles.gear}
+            type="button"
+            title="Settings"
+            aria-label="Settings"
+            onClick={() => go("/settings")}
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <circle cx="8" cy="8" r="2.4" />
+              <path d="M8 1.4v1.6M8 13v1.6M1.4 8h1.6M13 8h1.6M3.34 3.34l1.13 1.13M11.53 11.53l1.13 1.13M12.66 3.34l-1.13 1.13M4.47 11.53l-1.13 1.13" />
+            </svg>
+          </button>
+        </div>
+      )}
       <div className={`${styles.glass} ${styles.theme}`} role="group" aria-label="Theme">
         {THEMES.map((t) => (
           <button key={t.id} type="button" title={t.title} aria-pressed={theme === t.id} onClick={() => setTheme(t.id)}>

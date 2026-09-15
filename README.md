@@ -86,13 +86,30 @@ optional and enables linked-ticket context. A `.env` in the package or repo
 root is picked up automatically, so `GITHUB_TOKEN=$(gh auth token)` can live
 there instead of being passed per invocation.
 
+## The desktop app
+
+`packages/desktop` is Deep Review as a Mac app: the same server, watcher and
+pages, in one window with a tray icon, notifications when a PR is ready, and
+a Settings page that keeps your tokens and model keys in the keychain (via
+Electron's `safeStorage`) instead of the environment. It takes over from the
+CLI's daemon and the launchd watcher when it starts, and the `pr-review` CLI
+keeps working against it.
+
+```sh
+pnpm app          # run it in development, with hot reload for the pages
+pnpm app:build    # build packages/desktop/dist/*.dmg (unsigned)
+```
+
+Merges to `main` build an unsigned arm64 release through
+`.github/workflows/release.yml`.
+
 ## Structure
 
 - `packages/pr` — one PR's raw material: URL parsing, GitHub metadata, linked Linear tickets, base/head worktrees, and unified-diff parsing. Depended on by the two analysis packages below.
 - `packages/call-graph` — analyze how a function's callers/callees change across a GitHub PR, using the TypeScript language service's call hierarchy (and Pyright for Python). Also renders the explorer pages.
 - `packages/slicer` — break a PR's diff into prioritized slices with an agent.
 - `packages/review` — the two together: slices on the vertical axis, call graphs on the horizontal. The `pr-review` CLI, the local server and its API, the watcher.
-- `packages/ui` — the client app (React + Vite, CSS modules): the index, the building placeholder and the explorer, rendered in the browser from the server's JSON. `pnpm --filter @deep-review/ui dev` runs it with hot reload against a running server.
+- `packages/desktop` — the Mac app (electron-vite): `src/main.ts` runs the server and the watcher, `src/preload.ts` is the typed bridge for settings, and `src/renderer` is the React client app (CSS modules) that renders the index, the building placeholder and the explorer from the server's JSON.
 
 
 

@@ -1,0 +1,51 @@
+/* The settings page: the same centred column as the index, and cards cut
+   from the same cloth as its PR rows. */
+.page { max-width: 60rem; margin: 0 auto; padding: 0 1rem 4rem; }
+.intro { margin-top: 1rem; padding: 1.5rem; border: 1px dashed var(--line-c); border-radius: 8px; color: var(--ink-soft); line-height: 1.5; }
+.intro p { margin: 0 0 0.6rem; }
+.intro p:last-child { margin-bottom: 0; }
+.intro code { font-family: var(--mono); font-size: 0.85em; color: var(--ink); }
+
+.card { margin-top: 1rem; padding: 0.9rem 1rem 1rem; border: 1px solid var(--line-c); border-radius: 8px; background: var(--panel); }
+.label { font-size: 0.62rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: 0.7rem; }
+
+.fields { display: flex; flex-direction: column; gap: 0.6rem; }
+.field { display: grid; grid-template-columns: 9.5rem minmax(0, 1fr); gap: 0.35rem 0.85rem; align-items: center; }
+.fieldLabel { color: var(--ink-soft); font-size: 0.85rem; }
+.control { display: flex; align-items: center; gap: 0.4rem; min-width: 0; }
+.input {
+  flex: 1; min-width: 0; padding: 0.3rem 0.7rem; border-radius: 999px;
+  border: 1px solid var(--glass-edge); background: var(--panel); color: var(--ink); font-size: 0.82rem;
+}
+.input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.secret { font-family: var(--mono); letter-spacing: 0.02em; }
+.hint { grid-column: 2; color: var(--ink-faint); font-size: 0.75rem; }
+.check { grid-column: 2; display: flex; align-items: center; gap: 0.45rem; color: var(--ink-soft); font-size: 0.85rem; cursor: pointer; user-select: none; }
+.check input { accent-color: var(--accent); margin: 0; }
+
+.actions { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.9rem; }
+.button { padding: 0.28rem 0.75rem; cursor: pointer; border: 1px solid var(--accent); border-radius: 6px; background: var(--accent-soft); color: var(--accent); font-size: 0.82rem; }
+.button:hover:not(:disabled) { background: var(--accent); color: var(--accent-ink); }
+.button:disabled { opacity: 0.55; cursor: default; }
+.ghost { padding: 0.2rem 0.55rem; cursor: pointer; border: 1px solid var(--line-c); border-radius: 6px; background: var(--panel); color: var(--ink-faint); font-size: 0.75rem; }
+.ghost:hover:not(:disabled) { color: var(--ink); border-color: var(--accent); }
+.ghost:disabled { opacity: 0.55; cursor: default; }
+.danger { padding: 0.2rem 0.55rem; cursor: pointer; border: 1px solid var(--line-c); border-radius: 6px; background: var(--panel); color: var(--ink-faint); font-size: 0.75rem; }
+.danger:hover:not(:disabled) { color: var(--del-edge); border-color: var(--del-edge); }
+.note { font-size: 0.8rem; color: var(--ink-soft); }
+.ok { color: var(--add-edge); }
+.bad { color: var(--del-edge); }
+
+.repos { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 0.8rem; }
+.repo { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.45rem 0.65rem; border: 1px solid var(--line-c); border-radius: 6px; background: var(--panel-2); }
+.repoName { font-family: var(--mono); font-size: 0.85rem; color: var(--ink); }
+.query { font-family: var(--mono); font-size: 0.72rem; color: var(--ink-faint); margin-top: 0.2rem; word-break: break-word; }
+.none { color: var(--ink-faint); font-size: 0.85rem; margin-bottom: 0.8rem; }
+.add { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.add .input { flex: 0 1 18rem; }
+
+.about { display: grid; grid-template-columns: 9.5rem minmax(0, 1fr); gap: 0.45rem 0.85rem; align-items: baseline; }
+.aboutKey { color: var(--ink-soft); font-size: 0.85rem; }
+.aboutValue { font-family: var(--mono); font-size: 0.78rem; color: var(--ink); overflow-wrap: anywhere; }
+.link { border: 0; padding: 0; background: none; font: inherit; color: var(--accent); cursor: pointer; text-align: left; }
+.link:hover { text-decoration: underline; }

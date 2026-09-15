@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildFileIndex, gapRow, type Decorations } from "../../../call-graph/src/html.js";
-import { fileDiffRows, renderDiffRows, type DiffRow } from "../../../call-graph/src/diffView.js";
-import { languageOf } from "../../../call-graph/src/highlight.js";
-import type { DiffHunk } from "../../../call-graph/src/types.js";
+import { buildFileIndex, gapRow, type Decorations } from "../../../../../call-graph/src/html.js";
+import { fileDiffRows, renderDiffRows, type DiffRow } from "../../../../../call-graph/src/diffView.js";
+import { languageOf } from "../../../../../call-graph/src/highlight.js";
+import type { DiffHunk } from "../../../../../call-graph/src/types.js";
 import { buildPaneRows } from "./codeRows.js";
 import type { FileEntry } from "./callGraph.js";
 

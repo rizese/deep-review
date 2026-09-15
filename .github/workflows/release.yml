@@ -1,0 +1,74 @@
+name: Release
+
+# Build an unsigned macOS (arm64) app on every merge to main and publish it
+# as a GitHub Release. Versioning is tag-driven: the first release takes the
+# desktop package's version, each later merge bumps the patch; bump the
+# package version in a PR to cut a minor or major.
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm typecheck && pnpm test
+
+      - name: Determine version
+        id: version
+        run: |
+          git fetch --tags --force
+          TAGS=$(git tag -l 'v*')
+          VERSION=$(TAGS="$TAGS" PKG="$(node -p "require('./packages/desktop/package.json').version")" node -e '
+            const pkg = process.env.PKG;
+            const tags = (process.env.TAGS || "").split("\n").map(t => t.trim().replace(/^v/, "")).filter(v => /^\d+\.\d+\.\d+$/.test(v));
+            const cmp = (a, b) => { const pa = a.split(".").map(Number), pb = b.split(".").map(Number); for (let i = 0; i < 3; i++) if (pa[i] !== pb[i]) return pa[i] - pb[i]; return 0; };
+            tags.sort(cmp);
+            const latest = tags[tags.length - 1];
+            let v;
+            if (!latest) v = pkg;
+            else if (cmp(pkg, latest) > 0) v = pkg;
+            else { const p = latest.split(".").map(Number); v = `${p[0]}.${p[1]}.${p[2] + 1}`; }
+            process.stdout.write(v);
+          ')
+          if git rev-parse "v$VERSION" >/dev/null 2>&1; then echo "::error::Tag v$VERSION already exists"; exit 1; fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Stamp version (build only)
+        working-directory: packages/desktop
+        run: npm version "${{ steps.version.outputs.version }}" --no-git-tag-version --allow-same-version
+
+      - name: Build macOS app (unsigned, arm64)
+        working-directory: packages/desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: pnpm exec electron-vite build && pnpm exec electron-builder --mac --publish never
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          files: |
+            packages/desktop/dist/*.dmg
+            packages/desktop/dist/*-mac.zip

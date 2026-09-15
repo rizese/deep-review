@@ -143,6 +143,8 @@ describe("navigation server", () => {
       const page = await fetch(withApp.url);
       expect(page.headers.get("content-type")).toMatch(/text\/html/);
       expect(await page.text()).toContain('<div id=root>');
+      // The app's own routes are served as the shell too, for deep links and reloads.
+      expect(await (await fetch(new URL("/settings", withApp.url))).text()).toContain('<div id=root>');
       const asset = await fetch(new URL("/assets/index-abc.js", withApp.url));
       expect(asset.status).toBe(200);
       expect(asset.headers.get("content-type")).toMatch(/javascript/);

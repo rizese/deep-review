@@ -69,7 +69,7 @@ export interface NavServerOptions {
   /** When failed builds are retried; see `RegistryOptions.retry`. */
   retry?: RegistryOptions["retry"];
   /**
-   * The built client app (packages/ui/dist): its index.html is every page
+   * The built client app (packages/desktop/out/renderer): its index.html is every page
    * this server serves, and its assets go under `/assets/`. Without a build
    * there — the directory missing, or `pnpm build` never run — every page
    * answers 503 saying so.
@@ -484,7 +484,9 @@ export async function startNavServer(options: NavServerOptions): Promise<NavServ
       sendText(res, 405, "text/plain", "method not allowed");
       return;
     }
-    if (path === "/") {
+    // The client app's own routes, besides the PRs': served as the app shell
+    // so a deep link or a reload lands on the page, not a 404.
+    if (path === "/" || path === "/settings" || path === "/settings/") {
       sendApp(res);
       return;
     }
@@ -544,7 +546,7 @@ export async function startNavServer(options: NavServerOptions): Promise<NavServ
 const NOT_BUILT = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Deep Review — the client app is not built</title></head>
 <body><h1>The client app is not built.</h1>
-<p>Every page this server serves is the client app in <code>packages/ui</code>, and there is no build of it here.</p>
+<p>Every page this server serves is the client app in <code>packages/desktop</code>, and there is no build of it here.</p>
 <p>Run <code>pnpm build</code> in the checkout, then reload.</p></body></html>
 `;
 
