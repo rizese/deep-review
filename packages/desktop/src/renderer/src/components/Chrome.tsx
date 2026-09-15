@@ -1,5 +1,5 @@
 import type { JSX } from "react";
-import { Contrast, Moon, Plus, Sun, Wrench, X, type LucideIcon } from "lucide-react";
+import { Plus, Wrench, X } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import wordmark from "../assets/wordmark.png";
 import { addPr, parsePrUrl } from "../lib/api.js";
@@ -7,10 +7,11 @@ import { go } from "../lib/route.js";
 import { useTheme, type Theme } from "../lib/theme.js";
 import styles from "./Chrome.module.css";
 
-const THEMES: { id: Theme; Icon: LucideIcon; title: string }[] = [
-  { id: "light", Icon: Sun, title: "Light" },
-  { id: "system", Icon: Contrast, title: "Follow the system" },
-  { id: "dark", Icon: Moon, title: "Dark" },
+// The theme switch keeps its glyphs: ☀ ◐ ☾ read better here than any icon set's.
+const THEMES: { id: Theme; glyph: string; title: string }[] = [
+  { id: "light", glyph: "☀", title: "Light" },
+  { id: "system", glyph: "◐", title: "Follow the system" },
+  { id: "dark", glyph: "☾", title: "Dark" },
 ];
 
 /**
@@ -100,7 +101,7 @@ export function Chrome({ count }: { count: number }): JSX.Element {
       <div className={`${styles.glass} ${styles.theme}`} role="group" aria-label="Theme">
         {THEMES.map((t) => (
           <button key={t.id} type="button" title={t.title} aria-label={t.title} aria-pressed={theme === t.id} onClick={() => setTheme(t.id)}>
-            <t.Icon aria-hidden="true" />
+            {t.glyph}
           </button>
         ))}
       </div>
