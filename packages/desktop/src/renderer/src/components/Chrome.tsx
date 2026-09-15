@@ -33,7 +33,7 @@ export function Chrome({ count }: { count: number }): JSX.Element {
     setNote({ text: "adding…", bad: false });
     try {
       const pr = await addPr(ref);
-      location.href = pr.path;
+      go(pr.path);
     } catch (error) {
       setNote({ text: error instanceof Error ? error.message : "the server is not answering", bad: true });
     }

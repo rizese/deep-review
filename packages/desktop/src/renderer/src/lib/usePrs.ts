@@ -1,5 +1,17 @@
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { listPrs, type PrView, type RegistryEvent } from "./api.js";
+
+export interface HeldPrs {
+  prs: PrView[];
+  ready: boolean;
+}
+
+/** The app opens one event stream, in App, and every page reads it from here. */
+export const PrsContext = createContext<HeldPrs>({ prs: [], ready: false });
+
+export function useHeldPrs(): HeldPrs {
+  return useContext(PrsContext);
+}
 
 /**
  * Every PR the server holds, kept current from its event stream: a snapshot

@@ -82,16 +82,10 @@
      takes its row, and the sidebar and stage share the rest. Anything that
      overflows scrolls inside its own pane — the sidebar, a panel, the
      description — never the page. */
-  body.slice-explorer {
-    max-width: none; margin: 0; padding: 0;
-    height: 100vh; overflow: hidden;
-    display: grid; grid-template-columns: 240px 1fr; grid-template-rows: var(--chrome-h) minmax(0, 1fr);
+  .slice-explorer {
+    flex: 1; min-height: 0;
+    display: grid; grid-template-columns: 240px 1fr; grid-template-rows: minmax(0, 1fr);
   }
-  /* The bar is the page grid's first row, whole. The server's markup gave
-     it a .chrome class; the Chrome component's class is module-scoped, so
-     the nav itself is named here. */
-  body.slice-explorer .chrome,
-  body.slice-explorer > #root > nav { grid-column: 1 / -1; }
   .main { padding: 0.3rem 1rem 1rem; min-width: 0; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); }
   .stage { position: relative; overflow: hidden; grid-row: 1; height: 100%; min-height: 0; }
   .deck {
@@ -235,7 +229,3 @@
   .md-img { max-width: 100%; border: 1px solid var(--line-c); border-radius: 6px; }
   .doc-block > :last-child { margin-bottom: 0; }
 
-  /* The app renders into #root, but the grid above is on the body — as it
-     was when the server wrote the markup. `display: contents` lets the bar,
-     the sidebar and the stage be the body's own grid items. */
-  body.slice-explorer > #root { display: contents; }

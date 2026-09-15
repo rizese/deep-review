@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent, type JSX } from "react";
 import type { ElectronAPI, Settings as SettingsValues, WatchedRepoEntry } from "../../../types/electronAPI.js";
-import { Chrome } from "../components/Chrome.js";
-import { usePrs } from "../lib/usePrs.js";
 import styles from "./Settings.module.css";
 
 const TOKENS_URL = "https://github.com/settings/tokens";
@@ -363,11 +361,9 @@ function NoBridge(): JSX.Element {
 
 /** The settings page: the app's keys, the repos it watches, and what it is. */
 export function Settings(): JSX.Element {
-  const { prs } = usePrs();
   const api = typeof window === "undefined" ? undefined : window.electronAPI;
   return (
     <>
-      <Chrome count={prs.length} />
       <main className={styles.page}>
         {api ? (
           <>

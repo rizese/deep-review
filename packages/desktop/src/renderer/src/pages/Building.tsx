@@ -1,5 +1,4 @@
 import { useEffect, type JSX } from "react";
-import { Chrome } from "../components/Chrome.js";
 import type { PrView } from "../lib/api.js";
 import "../styles/source.css";
 import "../styles/building.css";
@@ -10,18 +9,13 @@ import "../styles/building.css";
  * live log comes from the same event stream the index reads, so a PR turns
  * into its explorer without a reload. A port of `the former server-rendered building page`.
  */
-export function Building({ pr, count }: { pr: PrView; count: number }): JSX.Element {
+export function Building({ pr }: { pr: PrView }): JSX.Element {
   const failed = pr.state === "failed";
-  useEffect(() => {
-    document.body.classList.add("building-page");
-    return () => document.body.classList.remove("building-page");
-  }, []);
   useEffect(() => {
     document.title = `${pr.key} — ${failed ? "failed" : "building"}`;
   }, [pr.key, failed]);
   return (
-    <>
-      <Chrome count={count} />
+    <div className="building-page">
       <main className="page">
         <header>
           <h1>{pr.title ?? pr.key}</h1>
@@ -35,6 +29,6 @@ export function Building({ pr, count }: { pr: PrView; count: number }): JSX.Elem
           <a href="/">← every PR on this server</a>
         </div>
       </main>
-    </>
+    </div>
   );
 }

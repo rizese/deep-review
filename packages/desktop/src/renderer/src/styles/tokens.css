@@ -7,6 +7,7 @@
   --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace;
   --chrome-h: 4rem;
   --pool: linear-gradient(160deg, #b3daf1 0%, #86bfe3 42%, #6fb0da 100%);
+  --pool-glow: rgba(255, 255, 255, 0.28); --pool-glow-2: rgba(120, 190, 235, 0.45);
   --grain: 0.36;
   --bg: #8ec4e6; --panel: rgba(255, 255, 255, 0.74); --panel-2: rgba(255, 255, 255, 0.5);
   --ink: #0f2b45; --ink-soft: #35597a; --ink-faint: #6d92b0;
@@ -27,6 +28,7 @@
   :root:not([data-theme="light"]) {
     color-scheme: dark;
     --pool: linear-gradient(160deg, #0d2f46 0%, #0b3a55 48%, #072538 100%);
+    --pool-glow: rgba(140, 200, 240, 0.12); --pool-glow-2: rgba(30, 110, 170, 0.4);
     --grain: 0.22;
     --bg: #0b3550; --panel: rgba(255, 255, 255, 0.075); --panel-2: rgba(255, 255, 255, 0.05);
     --ink: #e6f1f8; --ink-soft: #9fbdd3; --ink-faint: #6f91a8;
@@ -47,6 +49,7 @@
 :root[data-theme="dark"] {
   color-scheme: dark;
   --pool: linear-gradient(160deg, #0d2f46 0%, #0b3a55 48%, #072538 100%);
+  --pool-glow: rgba(140, 200, 240, 0.12); --pool-glow-2: rgba(30, 110, 170, 0.4);
   --grain: 0.22;
   --bg: #0b3550; --panel: rgba(255, 255, 255, 0.075); --panel-2: rgba(255, 255, 255, 0.05);
   --ink: #e6f1f8; --ink-soft: #9fbdd3; --ink-faint: #6f91a8;

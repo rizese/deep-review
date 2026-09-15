@@ -17,6 +17,11 @@ const app: AppAPI = {
   version: () => ipcRenderer.invoke("app:version"),
   openExternal: (url: string) => ipcRenderer.invoke("app:open-external", url),
   serverInfo: () => ipcRenderer.invoke("app:server-info"),
+  onNavigate: (callback) => {
+    const listener = (_event: unknown, path: string): void => callback(path);
+    ipcRenderer.on("app:navigate", listener);
+    return () => ipcRenderer.removeListener("app:navigate", listener);
+  },
 };
 
 const api: ElectronAPI = { settings, watch, app };

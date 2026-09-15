@@ -1,4 +1,9 @@
 import { useEffect, useState, type JSX } from "react";
+import { Chrome } from "./components/Chrome.js";
+import { PageFade } from "./components/PageFade.js";
+import { Pool } from "./components/Pool.js";
+import { go, interceptLinks } from "./lib/route.js";
+import { PrsContext, usePrs } from "./lib/usePrs.js";
 import { Index } from "./pages/Index.js";
 import { PrPage, type PrRef } from "./pages/PrPage.js";
 import { Settings } from "./pages/Settings.js";
@@ -11,21 +16,49 @@ export function parsePath(path: string): PrRef | null {
   return m ? { owner: decodeURIComponent(m[1]!), repo: decodeURIComponent(m[2]!), number: Number(m[3]) } : null;
 }
 
-/**
- * Which page this is, from the address. The index lives at `/`; every PR
- * has its own prefix, which the server mounts and serves this app from; and
- * `/settings` is the app's own page, reached by pushState rather than by
- * asking the server — so the address is read from state and kept current
- * through popstate.
- */
-export function App(): JSX.Element | null {
-  const [path, setPath] = useState(() => location.pathname);
-  useEffect(() => {
-    const onPop = (): void => setPath(location.pathname);
-    addEventListener("popstate", onPop);
-    return () => removeEventListener("popstate", onPop);
-  }, []);
+function pageFor(path: string): JSX.Element {
   if (path === "/settings" || path === "/settings/") return <Settings />;
   const ref = parsePath(path);
   return ref ? <PrPage target={ref} /> : <Index />;
+}
+
+/**
+ * The app: one document for the life of the window. The pool behind
+ * everything is mounted once and never touched again; the bar stays and
+ * only changes shape; the page inside crossfades as the address changes —
+ * by pushState, never by loading a new document. One event stream feeds
+ * every page.
+ */
+export function App(): JSX.Element {
+  const [path, setPath] = useState(() => location.pathname);
+  const held = usePrs();
+  const compact = parsePath(path) !== null;
+
+  useEffect(() => {
+    const onPop = (): void => setPath(location.pathname);
+    addEventListener("popstate", onPop);
+    const stopIntercepting = interceptLinks();
+    // The desktop shell asks for a page — a notification clicked, the tray's
+    // Settings — and gets it without a reload.
+    const stopListening = window.electronAPI?.app.onNavigate?.((to) => go(to));
+    return () => {
+      removeEventListener("popstate", onPop);
+      stopIntercepting();
+      stopListening?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("compact", compact);
+  }, [compact]);
+
+  return (
+    <PrsContext.Provider value={held}>
+      <Pool />
+      <div className="app">
+        <Chrome count={held.prs.length} />
+        <PageFade path={path}>{pageFor(path)}</PageFade>
+      </div>
+    </PrsContext.Provider>
+  );
 }

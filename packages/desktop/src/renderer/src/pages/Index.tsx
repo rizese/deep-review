@@ -1,10 +1,10 @@
 import type { JSX } from "react";
 import { ExternalLink } from "lucide-react";
 import type { MouseEvent } from "react";
-import { Chrome } from "../components/Chrome.js";
 import { SizeBar } from "../components/SizeBar.js";
 import { addPr, forgetPr, parseKey, type PrView } from "../lib/api.js";
-import { usePrs } from "../lib/usePrs.js";
+import { go } from "../lib/route.js";
+import { useHeldPrs } from "../lib/usePrs.js";
 import { useStored } from "../lib/useStored.js";
 import styles from "./Index.module.css";
 
@@ -54,8 +54,7 @@ function Card({ pr, hidden }: { pr: PrView; hidden: boolean }): JSX.Element {
   const open = (e: MouseEvent): void => {
     // Anywhere on a card opens its PR; its own links and buttons keep their meaning.
     if ((e.target as Element).closest("a, button, input, label")) return;
-    if (e.metaKey || e.ctrlKey) window.open(pr.path, "_blank");
-    else location.href = pr.path;
+    go(pr.path);
   };
   const retry = (): void => {
     const ref = parseKey(pr.key);
@@ -117,7 +116,7 @@ function Card({ pr, hidden }: { pr: PrView; hidden: boolean }): JSX.Element {
 
 /** The index: every PR the server holds, on two tabs, with approved ones hidden on request. */
 export function Index(): JSX.Element {
-  const { prs, ready } = usePrs();
+  const { prs, ready } = useHeldPrs();
   const [tabStored, setTab] = useStored("deep-review.tab", "review");
   const tab = tabStored === "authored" ? "authored" : "review";
   const [hideStored, setHide] = useStored("deep-review.hideApproved", "false");
@@ -135,7 +134,6 @@ export function Index(): JSX.Element {
 
   return (
     <>
-      <Chrome count={prs.length} />
       <main className={styles.page}>
         <div className={styles.toolbar}>
           <div className={styles.tabs} role="tablist">

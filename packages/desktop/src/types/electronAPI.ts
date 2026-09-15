@@ -46,6 +46,8 @@ export interface AppAPI {
   openExternal: (url: string) => Promise<void>;
   /** Where the server lives and what it holds, for the settings page's status line. */
   serverInfo: () => Promise<Result<{ url: string; stateDir: string; watching: boolean; lastPollAt: number | null }>>;
+  /** The shell wants a page shown — a notification was clicked, the tray asked for Settings. Returns the way to stop listening. */
+  onNavigate: (callback: (path: string) => void) => () => void;
 }
 
 export interface ElectronAPI {

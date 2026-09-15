@@ -66,8 +66,11 @@ function createWindow(): BrowserWindow {
 }
 
 function showWindow(pathname?: string): void {
-  const window = mainWindow ?? createWindow();
-  if (pathname) void window.loadURL(pageUrl(pathname));
+  const existing = mainWindow;
+  const window = existing ?? createWindow();
+  // An open window navigates in place; a new one loads the page directly.
+  if (pathname && existing) window.webContents.send("app:navigate", pathname);
+  else if (pathname) void window.loadURL(pageUrl(pathname));
   if (window.isMinimized()) window.restore();
   window.show();
   window.focus();

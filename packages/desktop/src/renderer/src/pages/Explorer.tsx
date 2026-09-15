@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
-import { Chrome } from "../components/Chrome.js";
 import { Deck } from "../components/explorer/Deck.js";
 import { DebugMarks } from "../components/explorer/DebugMarks.js";
 import { Description } from "../components/explorer/Description.js";
@@ -20,7 +19,7 @@ const SLIDE_MS = 520;
  * slice's call graph walkable horizontally from the symbols in its diff. A
  * port of `the former server-rendered explorer` and the client JS that came with it.
  */
-export function Explorer({ input, count }: { input: SliceExplorerInput; count: number }): JSX.Element {
+export function Explorer({ input }: { input: SliceExplorerInput }): JSX.Element {
   const [current, setCurrent] = useState(0);
   const [showingDescription, setShowingDescription] = useState(false);
   const [trails, setTrails] = useState<Map<number, Trail[]>>(
@@ -53,12 +52,6 @@ export function Explorer({ input, count }: { input: SliceExplorerInput; count: n
   }, [nodes]);
   const titles = useMemo(() => input.slices.map((s) => s.title), [input]);
 
-  // The page is a grid on the body, as the server's page was; the bar is
-  // compact over a PR. #root would otherwise be the grid's only child.
-  useEffect(() => {
-    document.body.classList.add("slice-explorer", "compact");
-    return () => document.body.classList.remove("slice-explorer", "compact");
-  }, []);
   useEffect(() => {
     document.body.classList.toggle("showing-description", showingDescription);
   }, [showingDescription]);
@@ -125,8 +118,7 @@ export function Explorer({ input, count }: { input: SliceExplorerInput; count: n
   }, []);
 
   return (
-    <>
-      <Chrome count={count} />
+    <div className="slice-explorer">
       <Sidebar
         input={input}
         current={current}
@@ -162,7 +154,7 @@ export function Explorer({ input, count }: { input: SliceExplorerInput; count: n
         <Description input={input} />
       </div>
       {debug && <DebugMarks />}
-    </>
+    </div>
   );
 }
 
