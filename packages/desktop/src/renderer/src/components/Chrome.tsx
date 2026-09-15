@@ -1,5 +1,5 @@
 import type { JSX } from "react";
-import { Monitor, Moon, Plus, Sun, Wrench, X, type LucideIcon } from "lucide-react";
+import { Contrast, Moon, Plus, Sun, Wrench, X, type LucideIcon } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import wordmark from "../assets/wordmark.png";
 import { addPr, parsePrUrl } from "../lib/api.js";
@@ -9,7 +9,7 @@ import styles from "./Chrome.module.css";
 
 const THEMES: { id: Theme; Icon: LucideIcon; title: string }[] = [
   { id: "light", Icon: Sun, title: "Light" },
-  { id: "system", Icon: Monitor, title: "Follow the system" },
+  { id: "system", Icon: Contrast, title: "Follow the system" },
   { id: "dark", Icon: Moon, title: "Dark" },
 ];
 

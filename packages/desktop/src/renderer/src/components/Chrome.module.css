@@ -4,6 +4,12 @@
   height: var(--chrome-h); box-sizing: border-box; padding: 0.9rem 1rem 0.5rem;
   transition: height 0.3s ease, padding 0.3s ease;
 }
+/* In the desktop app the window has no title bar of its own: this bar is
+   it. Empty space drags the window; the controls do not; the wordmark
+   starts clear of the traffic lights. */
+:global(.desktop) .chrome { -webkit-app-region: drag; padding-left: 5.5rem; }
+:global(.desktop) .chrome a, :global(.desktop) .chrome button, :global(.desktop) .chrome input, :global(.desktop) .chrome form { -webkit-app-region: no-drag; }
+:global(.desktop.compact) .chrome { padding-left: 5.5rem; }
 .glass {
   display: inline-flex; align-items: center; gap: 0.7rem; height: 100%;
   padding: 0 1.15rem; border-radius: 999px; color: var(--ink);

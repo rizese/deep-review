@@ -48,6 +48,10 @@ function createWindow(): BrowserWindow {
     show: false,
     autoHideMenuBar: true,
     title: "Deep Review",
+    // No title bar: the pool runs to the top edge and our own bar is the
+    // top of the window, with the traffic lights sitting in it.
+    titleBarStyle: "hiddenInset",
+    trafficLightPosition: { x: 16, y: 18 },
     icon: path.join(__dirname, "../../resources/icon.png"),
     webPreferences: { preload: path.join(__dirname, "../preload/index.js"), sandbox: false },
   });

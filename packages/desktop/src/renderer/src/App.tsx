@@ -51,6 +51,10 @@ export function App(): JSX.Element {
   useEffect(() => {
     document.documentElement.classList.toggle("compact", compact);
   }, [compact]);
+  // Inside the desktop shell the bar is also the window's title bar.
+  useEffect(() => {
+    document.documentElement.classList.toggle("desktop", Boolean(window.electronAPI));
+  }, []);
 
   return (
     <PrsContext.Provider value={held}>
