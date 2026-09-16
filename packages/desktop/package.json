@@ -6,7 +6,7 @@
   "main": "./out/main/index.js",
   "author": "Ricky Zese",
   "scripts": {
-    "dev": "electron-vite dev --watch",
+    "dev": "node scripts/dev-identity.mjs && electron-vite dev --watch",
     "start": "electron-vite preview",
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.node.json --composite false && tsc --noEmit -p tsconfig.web.json --composite false",

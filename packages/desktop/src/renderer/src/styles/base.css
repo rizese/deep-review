@@ -27,5 +27,3 @@ button, input { font: inherit; }
   .page-fade.out { transition: none; }
   .page-fade.in { animation: none; }
 }
-/* Compact: over a PR the bar gives the height back to the code. */
-.compact { --chrome-h: 2.5rem; }

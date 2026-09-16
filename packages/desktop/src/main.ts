@@ -47,11 +47,11 @@ function createWindow(): BrowserWindow {
     minHeight: 600,
     show: false,
     autoHideMenuBar: true,
-    title: "Deep Review",
+    title: is.dev ? "Deep Review (dev)" : "Deep Review",
     // No title bar: the pool runs to the top edge and our own bar is the
     // top of the window, with the traffic lights sitting in it.
     titleBarStyle: "hiddenInset",
-    trafficLightPosition: { x: 16, y: 18 },
+    trafficLightPosition: { x: 16, y: 19 },
     icon: path.join(__dirname, "../../resources/icon.png"),
     webPreferences: { preload: path.join(__dirname, "../preload/index.js"), sandbox: false },
   });
@@ -216,8 +216,21 @@ function registerIpc(): void {
   });
 }
 
+/**
+ * In development the running binary is Electron's own. Its Dock tile and
+ * Cmd-Tab tile come from NSApplication's icon, which this sets; its name
+ * in the menu bar comes from the bundle, which scripts/dev-identity.mjs
+ * rewrote before launch. The packaged app needs neither.
+ */
+function applyDevIdentity(): void {
+  if (!is.dev) return;
+  const icon = nativeImage.createFromPath(path.join(__dirname, "../../resources/icon.png"));
+  if (!icon.isEmpty()) app.dock?.setIcon(icon);
+}
+
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId("com.rizese.deepreview");
+  applyDevIdentity();
   app.on("browser-window-created", (_, window) => optimizer.watchWindowShortcuts(window));
 
   const settings = await readSettings();
