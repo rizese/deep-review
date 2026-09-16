@@ -1,5 +1,5 @@
 /* The bar runs the width of the window; the content below is a column. */
-.page { max-width: 60rem; margin: 0 auto; padding: 0 1rem 4rem; }
+.page { padding: 0 1rem 4rem; }
 .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-top: 0.75rem; border-bottom: 1px solid var(--line-c); }
 .tabs { display: flex; gap: 0.25rem; }
 .tab { padding: 0.5rem 0.9rem; cursor: pointer; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; color: var(--ink-soft); font-weight: 600; }
