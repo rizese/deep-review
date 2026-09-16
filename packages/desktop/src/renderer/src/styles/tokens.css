@@ -5,7 +5,7 @@
   color-scheme: light;
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace;
-  --chrome-h: 50px;
+  --chrome-h: 54px;
   --pool: linear-gradient(160deg, #b3daf1 0%, #86bfe3 42%, #6fb0da 100%);
   --pool-glow: rgba(255, 255, 255, 0.28); --pool-glow-2: rgba(120, 190, 235, 0.45);
   --grain: 0.36;
