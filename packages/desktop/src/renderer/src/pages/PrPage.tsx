@@ -49,6 +49,11 @@ export function PrPage({ target }: { target: PrRef }): JSX.Element | null {
     };
   }, [built, key]);
 
+  // Opened and readable: the desktop shell stops counting it as waiting.
+  useEffect(() => {
+    if (input) void window.electronAPI?.app.opened(key);
+  }, [input, key]);
+
   if (!pr) return null;
   if (input) return <Explorer input={input} />;
   // Ready but the input is still on its way: nothing, rather than a flash of

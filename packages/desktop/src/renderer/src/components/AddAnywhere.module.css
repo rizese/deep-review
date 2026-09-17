@@ -1,0 +1,37 @@
+/* The whole window takes a PR link: while one is dragged over it the page
+   shows where it will land; whatever happens next is said in a toast. */
+.drop {
+  position: fixed; inset: 0; z-index: 90; pointer-events: none;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--accent-soft);
+  opacity: 0; transition: opacity 0.16s ease;
+}
+.drop[data-active="true"] { opacity: 1; }
+.drop::before {
+  content: ""; position: absolute; inset: 0.75rem; border-radius: 12px;
+  border: 2px dashed var(--accent);
+}
+.dropLabel {
+  padding: 0.6rem 1.15rem; border-radius: 999px; color: var(--ink); font-weight: 600;
+  background: linear-gradient(180deg, var(--glass-hi), var(--glass-lo));
+  border: 1px solid var(--glass-edge);
+  box-shadow: inset 0 1px 0 var(--glass-edge), 0 8px 24px var(--glass-shadow);
+  backdrop-filter: blur(12px) saturate(1.2); -webkit-backdrop-filter: blur(12px) saturate(1.2);
+}
+.toast {
+  position: fixed; left: 50%; bottom: 1.25rem; z-index: 95; transform: translateX(-50%);
+  max-width: min(36rem, calc(100vw - 2rem)); padding: 0.5rem 1rem; border-radius: 999px;
+  color: var(--ink); font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  background: linear-gradient(180deg, var(--glass-hi), var(--glass-lo));
+  border: 1px solid var(--glass-edge);
+  box-shadow: inset 0 1px 0 var(--glass-edge), 0 8px 24px var(--glass-shadow);
+  backdrop-filter: blur(12px) saturate(1.2); -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  animation: toast-in 0.2s ease-out;
+}
+.toast[data-bad="true"] { color: var(--del-edge); }
+.toast code { font-family: var(--mono); font-size: 0.9em; }
+@keyframes toast-in { from { opacity: 0; transform: translate(-50%, 0.5rem); } to { opacity: 1; transform: translate(-50%, 0); } }
+@media (prefers-reduced-motion: reduce) {
+  .drop { transition: none; }
+  .toast { animation: none; }
+}

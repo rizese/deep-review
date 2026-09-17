@@ -10,9 +10,10 @@ import { agentInstalled, uninstallAgent } from "@deep-review/review/launchAgent"
 import { readFileSync, writeFileSync } from "node:fs";
 import type { PrView } from "@deep-review/review/api";
 import type { NavServer } from "@deep-review/review/daemon";
+import { startBadge, type Badge } from "./main/badge.js";
 import { applyToEnvironment, readSettings, writeSettings } from "./main/settings.js";
-import { startWatchLoop, type WatchLoop } from "./main/watch.js";
-import type { Result, Settings, WatchedRepoEntry } from "./types/electronAPI.js";
+import { hasGithubToken, startWatchLoop, type WatchLoop } from "./main/watch.js";
+import type { Result, Settings, WatchedRepoEntry, WatchStatus } from "./types/electronAPI.js";
 
 /**
  * Deep Review as an app. The main process is the review server — the same
@@ -27,6 +28,7 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let server: NavServer | null = null;
 let watchLoop: WatchLoop | null = null;
+let badge: Badge | null = null;
 const log = (message: string): void => console.log(`[deep-review] ${message}`);
 
 const ok = <T,>(data?: T): Result<T> => (data === undefined ? { success: true } : { success: true, data });
@@ -56,6 +58,14 @@ function createWindow(): BrowserWindow {
     webPreferences: { preload: path.join(__dirname, "../preload/index.js"), sandbox: false },
   });
   window.on("ready-to-show", () => window.show());
+  // A link dragged onto the window would otherwise load it in place of the
+  // app. The page takes PR links itself (drop or paste); anything else that
+  // would carry the window away goes to the browser instead.
+  window.webContents.on("will-navigate", (event, url) => {
+    if (new URL(url).origin === new URL(pageUrl("/")).origin) return;
+    event.preventDefault();
+    if (/^https?:\/\//.test(url)) void shell.openExternal(url);
+  });
   // Links that would open a new window — GitHub, mostly — go to the browser.
   window.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);
@@ -146,6 +156,15 @@ async function startServer(): Promise<void> {
   });
   log(`serving ${server.url}`);
   watchForNotifications(server);
+  badge = startBadge(server, {
+    file: path.join(app.getPath("userData"), "seen.json"),
+    setBadge: (text) => app.dock?.setBadge(text),
+  });
+}
+
+/** The pages learn of the watcher's standing as it changes, not by asking. */
+function tellStatus(status: WatchStatus): void {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("watch:status", status);
 }
 
 function registerIpc(): void {
@@ -158,9 +177,13 @@ function registerIpc(): void {
   });
   ipcMain.handle("settings:set", async (_event, settings: Settings): Promise<Result> => {
     try {
+      const hadToken = hasGithubToken();
       await writeSettings(settings);
       applyToEnvironment(settings);
       app.setLoginItemSettings({ openAtLogin: settings.openAtLogin });
+      watchLoop?.refresh();
+      // A token just arrived: the first poll should not wait for the timer.
+      if (!hadToken && hasGithubToken()) void watchLoop?.pollNow();
       return ok();
     } catch (error) {
       return failed(error);
@@ -177,6 +200,8 @@ function registerIpc(): void {
     try {
       if (!/^[^/\s]+\/[^/\s]+$/.test(repo)) throw new Error(`${JSON.stringify(repo)} is not an owner/repo`);
       addWatchedRepo(repo);
+      watchLoop?.refresh();
+      void watchLoop?.pollNow();
       return ok();
     } catch (error) {
       return failed(error);
@@ -188,6 +213,7 @@ function registerIpc(): void {
       const doc = JSON.parse(readFileSync(file, "utf8")) as { repos?: Record<string, unknown> };
       if (doc.repos) delete doc.repos[repo];
       writeFileSync(file, `${JSON.stringify(doc, null, 2)}\n`);
+      watchLoop?.refresh();
       return ok();
     } catch (error) {
       return failed(error);
@@ -200,6 +226,17 @@ function registerIpc(): void {
     } catch (error) {
       return failed(error);
     }
+  });
+  ipcMain.handle("watch:status", (): Result<WatchStatus> => {
+    try {
+      if (!watchLoop) throw new Error("the watcher is not running");
+      return ok(watchLoop.status());
+    } catch (error) {
+      return failed(error);
+    }
+  });
+  ipcMain.handle("app:opened", (_event, key: string) => {
+    if (typeof key === "string") badge?.opened(key);
   });
   ipcMain.handle("app:version", () => app.getVersion());
   ipcMain.handle("app:open-external", (_event, url: string) => {
@@ -241,7 +278,7 @@ app.whenReady().then(async () => {
   } catch (error) {
     log(`could not start the server: ${error instanceof Error ? error.message : String(error)}`);
   }
-  watchLoop = startWatchLoop({ log });
+  watchLoop = startWatchLoop({ log, onStatus: tellStatus });
   buildTray();
   createWindow();
 
@@ -259,5 +296,6 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   watchLoop?.stop();
+  badge?.stop();
   if (server) void server.close();
 });

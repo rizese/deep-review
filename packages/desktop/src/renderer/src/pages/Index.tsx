@@ -7,6 +7,7 @@ import { usePageReady } from "../components/PageFade.js";
 import { go } from "../lib/route.js";
 import { useHeldPrs } from "../lib/usePrs.js";
 import { useStored } from "../lib/useStored.js";
+import { setupGap, useWatchStatus } from "../lib/useWatchStatus.js";
 import styles from "./Index.module.css";
 
 
@@ -115,10 +116,36 @@ function Card({ pr, hidden }: { pr: PrView; hidden: boolean }): JSX.Element {
   );
 }
 
+/**
+ * What the desktop app shows before the watcher can work: no token, or no
+ * repo to watch. Either way the way forward is Settings, and a PR link can
+ * be dropped or pasted in the meantime.
+ */
+function Setup({ gap, held }: { gap: "token" | "repos"; held: number }): JSX.Element {
+  const meantime = held > 0 ? "The PRs below are what the server already holds; the list will not change until it can look." : "Or drop a PR link anywhere in this window, or paste one.";
+  return (
+    <section className={styles.setup} aria-label="Set up">
+      <div>
+        <div className={styles.setupTitle}>{gap === "token" ? "Connect GitHub to start watching" : "Name a repo to watch"}</div>
+        <div className={styles.setupBody}>
+          {gap === "token"
+            ? "Deep Review looks for the PRs waiting on your review and builds a reading of each one. It needs a GitHub token to look."
+            : "A token is in place. Watch a repo and the PRs waiting on you there appear here as they are built."}{" "}
+          {meantime}
+        </div>
+      </div>
+      <button className={styles.setupButton} type="button" onClick={() => go("/settings")}>
+        {gap === "token" ? "Add a token" : "Watch a repo"}
+      </button>
+    </section>
+  );
+}
+
 /** The index: every PR the server holds, on two tabs, with approved ones hidden on request. */
 export function Index(): JSX.Element {
   const { prs, ready } = useHeldPrs();
   usePageReady(ready);
+  const gap = setupGap(useWatchStatus());
   const [tabStored, setTab] = useStored("deep-review.tab", "review");
   const tab = tabStored === "authored" ? "authored" : "review";
   const [hideStored, setHide] = useStored("deep-review.hideApproved", "false");
@@ -137,6 +164,7 @@ export function Index(): JSX.Element {
   return (
     <>
       <main className={styles.page}>
+        {ready && gap && <Setup gap={gap} held={prs.length} />}
         <div className={styles.toolbar}>
           <div className={styles.tabs} role="tablist">
             <button className={styles.tab} type="button" role="tab" aria-selected={tab === "review"} onClick={() => setTab("review")}>
@@ -155,7 +183,7 @@ export function Index(): JSX.Element {
             <Card key={pr.key} pr={pr} hidden={!isShown(pr)} />
           ))}
         </div>
-        {ready && prs.length === 0 && (
+        {ready && prs.length === 0 && !gap && (
           <div className={styles.empty}>
             Nothing loaded yet. Add a PR from any terminal:
             <div>

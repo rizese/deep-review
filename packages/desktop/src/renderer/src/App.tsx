@@ -1,9 +1,11 @@
 import { useEffect, useState, type JSX } from "react";
+import { AddAnywhere } from "./components/AddAnywhere.js";
 import { Chrome } from "./components/Chrome.js";
 import { PageFade } from "./components/PageFade.js";
 import { Pool } from "./components/Pool.js";
 import { go, interceptLinks } from "./lib/route.js";
 import { PrsContext, usePrs } from "./lib/usePrs.js";
+import { WatchStatusContext, useWatchStatusSource } from "./lib/useWatchStatus.js";
 import { Index } from "./pages/Index.js";
 import { PrPage, type PrRef } from "./pages/PrPage.js";
 import { Settings } from "./pages/Settings.js";
@@ -32,6 +34,7 @@ function pageFor(path: string): JSX.Element {
 export function App(): JSX.Element {
   const [path, setPath] = useState(() => location.pathname);
   const held = usePrs();
+  const watch = useWatchStatusSource();
   const compact = parsePath(path) !== null;
 
   useEffect(() => {
@@ -58,11 +61,14 @@ export function App(): JSX.Element {
 
   return (
     <PrsContext.Provider value={held}>
-      <Pool />
-      <div className="app">
-        <Chrome count={held.prs.length} />
-        <PageFade path={path}>{pageFor(path)}</PageFade>
-      </div>
+      <WatchStatusContext.Provider value={watch}>
+        <Pool />
+        <div className="app">
+          <Chrome count={held.prs.length} />
+          <PageFade path={path}>{pageFor(path)}</PageFade>
+        </div>
+        <AddAnywhere />
+      </WatchStatusContext.Provider>
     </PrsContext.Provider>
   );
 }

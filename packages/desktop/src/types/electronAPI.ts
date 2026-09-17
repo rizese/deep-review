@@ -22,6 +22,18 @@ export interface WatchedRepoEntry {
   authoredQuery?: string | undefined;
 }
 
+/** How the watcher stands: whether it can poll at all, and how its last poll went. */
+export interface WatchStatus {
+  /** A GitHub token is in place; without one nothing is polled. */
+  hasToken: boolean;
+  /** How many repos the watcher polls. */
+  repos: number;
+  polling: boolean;
+  lastPollAt: number | null;
+  /** Why the last poll failed, when it did; null after a good one. */
+  lastError: string | null;
+}
+
 export interface Result<T = void> {
   success: boolean;
   data?: T;
@@ -39,6 +51,9 @@ export interface WatchAPI {
   remove: (repo: string) => Promise<Result>;
   /** Poll GitHub now rather than at the next interval. */
   pollNow: () => Promise<Result>;
+  status: () => Promise<Result<WatchStatus>>;
+  /** The watcher's standing changed — a poll began or ended, a token was set. Returns the way to stop listening. */
+  onStatus: (callback: (status: WatchStatus) => void) => () => void;
 }
 
 export interface AppAPI {
@@ -48,6 +63,8 @@ export interface AppAPI {
   serverInfo: () => Promise<Result<{ url: string; stateDir: string; watching: boolean; lastPollAt: number | null }>>;
   /** The shell wants a page shown — a notification was clicked, the tray asked for Settings. Returns the way to stop listening. */
   onNavigate: (callback: (path: string) => void) => () => void;
+  /** The reader opened a PR's page: it no longer counts on the Dock badge. */
+  opened: (key: string) => Promise<void>;
 }
 
 export interface ElectronAPI {

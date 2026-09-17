@@ -21,6 +21,11 @@
 a.brand:hover { border-color: #fff; }
 .tools { view-transition-name: chrome-tools; padding: 0 0.5rem 0 0.9rem; gap: 0.4rem; }
 .theme { view-transition-name: chrome-theme; margin-left: auto; padding: 0 0.35rem; gap: 0.15rem; }
+/* The watcher cannot do its job: one short line, and the pill is the way
+   to the page that fixes it. */
+.status { gap: 0.45rem; padding: 0 0.9rem; font-size: 0.8rem; font-weight: 600; color: var(--ink); }
+.status:hover { border-color: #fff; }
+.statusDot { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--del-edge); box-shadow: 0 0 0 3px var(--del-bg); }
 /* The way to the settings page, in the desktop app only: its own pill, held
    against the theme switch at the right end. */
 .settings { view-transition-name: chrome-settings; margin-left: auto; padding: 0 0.35rem; }
