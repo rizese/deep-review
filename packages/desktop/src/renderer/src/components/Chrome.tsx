@@ -5,7 +5,6 @@ import wordmark from "../assets/wordmark.png";
 import { addAndOpen, findPrUrl } from "../lib/addByUrl.js";
 import { go } from "../lib/route.js";
 import { useTheme, type Theme } from "../lib/theme.js";
-import { setupGap, useWatchStatus } from "../lib/useWatchStatus.js";
 import styles from "./Chrome.module.css";
 
 // The theme switch keeps its glyphs: ☀ ◐ ☾ read better here than any icon set's.
@@ -15,24 +14,12 @@ const THEMES: { id: Theme; glyph: string; title: string }[] = [
   { id: "dark", glyph: "☾", title: "Dark" },
 ];
 
-/** The one line the bar has room for about a watcher that cannot do its job. */
-function statusLine(gap: "token" | "repos" | null, lastError: string | null): { text: string; title: string } | null {
-  if (gap === "token") return { text: "Connect GitHub", title: "No GitHub token is set, so nothing is being watched. Add one in Settings." };
-  if (gap === "repos") return { text: "Watch a repo", title: "No repos are watched yet; name one in Settings." };
-  if (lastError) return { text: "GitHub unreachable", title: `The last check failed: ${lastError}` };
-  return null;
-}
-
 /**
  * The bar along the top of every page: the wordmark as the way home, how
  * many PRs the server holds with a way to add one by URL, and the theme.
- * In the desktop app it also says when the watcher is not keeping the list
- * current, and where to fix that.
  */
 export function Chrome({ count }: { count: number }): JSX.Element {
   const [theme, setTheme] = useTheme();
-  const watch = useWatchStatus();
-  const status = watch ? statusLine(setupGap(watch), watch.lastError) : null;
   const [open, setOpen] = useState(false);
   const [url, setUrl] = useState("");
   const [note, setNote] = useState<{ text: string; bad: boolean } | null>(null);
@@ -92,12 +79,6 @@ export function Chrome({ count }: { count: number }): JSX.Element {
           </form>
         )}
       </div>
-      {status && (
-        <a className={`${styles.glass} ${styles.status}`} href="/settings" title={status.title} data-status>
-          <span className={styles.statusDot} aria-hidden="true" />
-          {status.text}
-        </a>
-      )}
       {/* Only the desktop app has settings to reach; in a browser the bar is
           exactly what it was. */}
       {typeof window !== "undefined" && window.electronAPI && (
