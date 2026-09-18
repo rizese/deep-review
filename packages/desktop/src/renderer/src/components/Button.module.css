@@ -1,7 +1,11 @@
 /* Every button that carries a word: a pill cut from the same glass as the
    bar. The quiet one is the default; the primary one is tinted with the
-   accent; the danger one turns red only when the pointer is on it. */
+   accent; the danger one turns red only when the pointer is on it. On
+   hover the glass never goes solid — it lifts, the edge catches light, a
+   glow gathers under it and a sheen sweeps across once, like light on
+   water. */
 .button {
+  position: relative; overflow: hidden; isolation: isolate;
   display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem; flex: none;
   padding: 0.38rem 0.95rem; border-radius: 999px; cursor: pointer;
   color: var(--ink-soft); font-size: 0.82rem; font-weight: 600; line-height: 1.2; white-space: nowrap;
@@ -9,24 +13,49 @@
   border: 1px solid var(--glass-edge);
   box-shadow: inset 0 1px 0 var(--glass-edge), 0 4px 14px var(--glass-shadow);
   backdrop-filter: blur(12px) saturate(1.2); -webkit-backdrop-filter: blur(12px) saturate(1.2);
-  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, color 0.15s ease;
+  transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.2s ease, border-color 0.2s ease, color 0.2s ease;
 }
-.button:hover:not(:disabled) { color: var(--ink); border-color: #fff; background: linear-gradient(180deg, var(--glass-hi), var(--glass-hi)); }
-.button:active:not(:disabled) { box-shadow: inset 0 1px 0 var(--glass-edge), 0 1px 4px var(--glass-shadow); }
+/* The sheen: a soft diagonal band of light, parked off the left edge. */
+.button::after {
+  content: ""; position: absolute; top: -40%; bottom: -40%; left: 0; width: 45%; pointer-events: none;
+  background: linear-gradient(105deg, transparent 0%, rgba(255, 255, 255, 0.55) 50%, transparent 100%);
+  transform: translateX(-160%) skewX(-18deg); opacity: 0;
+}
+.button:hover:not(:disabled) {
+  color: var(--ink); transform: translateY(-1px);
+  border-color: #fff;
+  box-shadow: inset 0 1px 0 #fff, 0 10px 26px var(--glass-shadow), 0 0 0 4px var(--glass-lo);
+}
+.button:hover:not(:disabled)::after { opacity: 1; animation: sheen 0.75s cubic-bezier(0.3, 0.7, 0.3, 1) 1; }
+.button:active:not(:disabled) { transform: translateY(0) scale(0.98); box-shadow: inset 0 1px 0 var(--glass-edge), 0 2px 8px var(--glass-shadow); }
 .button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .button:disabled { opacity: 0.55; cursor: default; }
 .button svg { width: 1em; height: 1em; }
+@keyframes sheen {
+  from { transform: translateX(-160%) skewX(-18deg); }
+  to { transform: translateX(380%) skewX(-18deg); }
+}
 
 .primary {
   color: var(--accent);
   background: linear-gradient(180deg, var(--glass-hi), var(--glass-lo)), var(--accent-soft);
   border-color: color-mix(in srgb, var(--accent) 40%, var(--glass-edge));
 }
-.primary:hover:not(:disabled) { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
+.primary:hover:not(:disabled) {
+  color: var(--accent); border-color: color-mix(in srgb, var(--accent) 55%, #fff);
+  box-shadow: inset 0 1px 0 #fff, 0 10px 26px color-mix(in srgb, var(--accent) 28%, transparent), 0 0 0 4px var(--accent-soft);
+}
 
 .danger:hover:not(:disabled) {
-  color: var(--del-edge); border-color: var(--del-edge);
+  color: var(--del-edge); border-color: color-mix(in srgb, var(--del-edge) 55%, #fff);
   background: linear-gradient(180deg, var(--glass-hi), var(--glass-lo)), var(--del-bg);
+  box-shadow: inset 0 1px 0 #fff, 0 10px 26px color-mix(in srgb, var(--del-edge) 22%, transparent), 0 0 0 4px var(--del-bg);
 }
 
 .sm { padding: 0.22rem 0.7rem; font-size: 0.76rem; font-weight: 500; }
+
+@media (prefers-reduced-motion: reduce) {
+  .button { transition: none; }
+  .button:hover:not(:disabled) { transform: none; }
+  .button:hover:not(:disabled)::after { animation: none; opacity: 0; }
+}
