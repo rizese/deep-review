@@ -24,14 +24,6 @@
 .check input { accent-color: var(--accent); margin: 0; }
 
 .actions { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.9rem; }
-.button { padding: 0.28rem 0.75rem; cursor: pointer; border: 1px solid var(--accent); border-radius: 6px; background: var(--accent-soft); color: var(--accent); font-size: 0.82rem; }
-.button:hover:not(:disabled) { background: var(--accent); color: var(--accent-ink); }
-.button:disabled { opacity: 0.55; cursor: default; }
-.ghost { padding: 0.2rem 0.55rem; cursor: pointer; border: 1px solid var(--line-c); border-radius: 6px; background: var(--panel); color: var(--ink-faint); font-size: 0.75rem; }
-.ghost:hover:not(:disabled) { color: var(--ink); border-color: var(--accent); }
-.ghost:disabled { opacity: 0.55; cursor: default; }
-.danger { padding: 0.2rem 0.55rem; cursor: pointer; border: 1px solid var(--line-c); border-radius: 6px; background: var(--panel); color: var(--ink-faint); font-size: 0.75rem; }
-.danger:hover:not(:disabled) { color: var(--del-edge); border-color: var(--del-edge); }
 .note { font-size: 0.8rem; color: var(--ink-soft); }
 .ok { color: var(--add-edge); }
 .bad { color: var(--del-edge); }

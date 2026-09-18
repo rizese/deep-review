@@ -1,6 +1,7 @@
 import type { JSX } from "react";
 import { ExternalLink } from "lucide-react";
 import type { MouseEvent } from "react";
+import { Button } from "../components/Button.js";
 import { SizeBar } from "../components/SizeBar.js";
 import { addPr, forgetPr, parseKey, type PrView } from "../lib/api.js";
 import { usePageReady } from "../components/PageFade.js";
@@ -101,16 +102,16 @@ function Card({ pr, hidden }: { pr: PrView; hidden: boolean }): JSX.Element {
         )}
         <span className={`${styles.pill} ${pr.state === "failed" ? styles.pillFailed : styles[pr.state]}`}>{pr.state}</span>
         {pr.state === "failed" && (
-          <button className={styles.retry} type="button" title="Build this PR again now" onClick={retry}>
+          <Button variant="primary" size="sm" title="Build this PR again now" onClick={retry}>
             retry
-          </button>
+          </Button>
         )}
         <a className={styles.gh} href={pr.prUrl} target="_blank" rel="noopener" title="Open on GitHub" aria-label="Open on GitHub">
           <ExternalLink aria-hidden="true" />
         </a>
-        <button className={styles.forget} type="button" title="Drop this PR from the server" onClick={() => void forgetPr(pr.key)}>
+        <Button variant="danger" size="sm" title="Drop this PR from the server" onClick={() => void forgetPr(pr.key)}>
           forget
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -134,9 +135,9 @@ function Setup({ gap, held }: { gap: "token" | "repos"; held: number }): JSX.Ele
           {meantime}
         </div>
       </div>
-      <button className={styles.setupButton} type="button" onClick={() => go("/settings")}>
+      <Button variant="primary" onClick={() => go("/settings")}>
         {gap === "token" ? "Add a token" : "Watch a repo"}
-      </button>
+      </Button>
     </section>
   );
 }

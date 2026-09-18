@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent, type JSX } from "react";
 import type { ElectronAPI, Settings as SettingsValues, WatchedRepoEntry } from "../../../types/electronAPI.js";
+import { Button } from "../components/Button.js";
 import styles from "./Settings.module.css";
 
 const TOKENS_URL = "https://github.com/settings/tokens";
@@ -112,15 +113,14 @@ function Keys({ api }: { api: ElectronAPI }): JSX.Element {
                 placeholder="not set"
                 onChange={(e) => edit(field.id, e.target.value)}
               />
-              <button
-                className={styles.ghost}
-                type="button"
+              <Button
+                size="sm"
                 aria-pressed={shown[field.id] ?? false}
                 aria-label={`${shown[field.id] ? "Hide" : "Show"} the ${field.label.toLowerCase()}`}
                 onClick={() => setShown((prev) => ({ ...prev, [field.id]: !prev[field.id] }))}
               >
                 {shown[field.id] ? "hide" : "show"}
-              </button>
+              </Button>
             </div>
             <div className={styles.hint}>
               {field.hint}
@@ -160,9 +160,9 @@ function Keys({ api }: { api: ElectronAPI }): JSX.Element {
         </div>
       </div>
       <div className={styles.actions}>
-        <button className={styles.button} type="submit" disabled={busy}>
+        <Button variant="primary" type="submit" disabled={busy}>
           {busy ? "Saving…" : "Save"}
-        </button>
+        </Button>
         {note && <span className={`${styles.note} ${note.bad ? styles.bad : styles.ok}`}>{note.text}</span>}
       </div>
     </form>
@@ -249,14 +249,9 @@ function Repos({ api }: { api: ElectronAPI }): JSX.Element {
                 {entry.query && <div className={styles.query}>for review: {entry.query}</div>}
                 {entry.authoredQuery && <div className={styles.query}>authored: {entry.authoredQuery}</div>}
               </div>
-              <button
-                className={styles.danger}
-                type="button"
-                aria-label={`Stop watching ${entry.repo}`}
-                onClick={() => void remove(entry.repo)}
-              >
+              <Button variant="danger" size="sm" aria-label={`Stop watching ${entry.repo}`} onClick={() => void remove(entry.repo)}>
                 remove
-              </button>
+              </Button>
             </div>
           ))}
         </div>
@@ -277,12 +272,12 @@ function Repos({ api }: { api: ElectronAPI }): JSX.Element {
             setNote(null);
           }}
         />
-        <button className={styles.button} type="submit" disabled={busy}>
+        <Button variant="primary" type="submit" disabled={busy}>
           Add
-        </button>
-        <button className={styles.ghost} type="button" disabled={polling} onClick={() => void pollNow()}>
+        </Button>
+        <Button disabled={polling} onClick={() => void pollNow()}>
           {polling ? "Checking…" : "Check GitHub now"}
-        </button>
+        </Button>
         {note && <span className={`${styles.note} ${note.bad ? styles.bad : styles.ok}`}>{note.text}</span>}
       </form>
     </section>
