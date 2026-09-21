@@ -1,7 +1,22 @@
 /* The code the reader carries to their browser: the largest thing on
    screen while it is live, because it is the only thing to do. */
-.device { display: flex; align-items: center; gap: 0.9rem; flex-wrap: wrap; padding: 0.85rem 1rem; border: 1px solid var(--accent); border-radius: 8px; background: var(--accent-soft); }
+.device {
+  display: flex; align-items: center; gap: 0.9rem; flex-wrap: wrap;
+  padding: 0.85rem 1rem; border: 1px solid var(--accent); border-radius: 8px; background: var(--accent-soft);
+  cursor: pointer; transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.device:hover { box-shadow: 0 0 0 4px var(--accent-soft); }
+/* The code and the way to copy it read as one thing. */
+.codeRow { display: inline-flex; align-items: center; gap: 0.5rem; }
 .code { font-family: var(--mono); font-size: 1.5rem; font-weight: 600; letter-spacing: 0.18em; color: var(--ink); user-select: all; }
+.copy {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.9rem; height: 1.9rem; flex: none; border: 0; border-radius: 50%;
+  background: transparent; color: var(--ink-soft); cursor: pointer;
+}
+.copy:hover { color: var(--ink); background: var(--glass-hi); }
+.copy[data-copied="true"] { color: var(--add-edge); }
+.copy svg { width: 1.05rem; height: 1.05rem; stroke-width: 1.8; }
 .text { color: var(--ink-soft); font-size: 0.82rem; max-width: 22rem; }
 .spacer { margin-left: auto; }
 .waiting { display: inline-flex; align-items: center; gap: 0.4rem; color: var(--accent); font-size: 0.8rem; font-weight: 600; }
@@ -12,5 +27,7 @@
 /* On the sign-in screen it is a column, centred, with the code given room. */
 .wide { flex-direction: column; text-align: center; gap: 0.7rem; padding: 1.4rem 1.6rem; }
 .wide .code { font-size: 2.1rem; }
+.wide .copy { width: 2.2rem; height: 2.2rem; }
+.wide .copy svg { width: 1.2rem; height: 1.2rem; }
 .wide .spacer { display: none; }
 .wide .text { max-width: 26rem; }
