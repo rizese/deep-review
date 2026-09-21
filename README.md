@@ -152,54 +152,55 @@ every other invocation uses — starting it if it is not up, so there is never
 a server to start yourself. New PRs simply appear on the server's index,
 built and ready.
 
-Which repos it watches is the business of one file, `~/.deep-review/watch.json`
-(under `$DEEP_REVIEW_HOME`, beside the rest of the state). `pr-review watch --repo <owner>/<repo>` adds a repo to it; or write it yourself:
+What it looks for is the business of one file, `~/.deep-review/watch.json`
+(under `$DEEP_REVIEW_HOME`, beside the rest of the state): a GitHub search
+per tab of the index, exactly the query github.com/pulls runs.
 
 ```json
 {
-  "repos": {
-    "acme/widgets": {},
-    "acme/gadgets": {
-      "query": "is:open is:pr review-requested:@me -is:draft",
-      "authoredQuery": "is:open is:pr author:@me -is:draft"
-    }
+  "searches": {
+    "review": [
+      "is:open is:pr archived:false draft:false assignee:@me",
+      "is:open is:pr archived:false draft:false review-requested:@me"
+    ],
+    "authored": ["is:open is:pr archived:false author:@me"]
   }
 }
 ```
 
-Each key is a repo to watch, and naming it is all opting in takes: an empty
-entry uses the default queries below. An entry may instead carry its own
-`query`, in GitHub search syntax, for a repo where "waiting on me" is spelled
-differently, and its own `authoredQuery` for what counts as one of yours.
-Leave `repo:` out of both — the repo is the key, and is appended for you, so
-no entry's query can reach into a repo other than the one it is filed under;
-one that tries is skipped with a note in the log. The file is read on every
-check, so adding a repo needs no reinstall.
+A list per tab because GitHub cannot OR two qualifiers in one query: being
+assigned and having your review requested are different things, and both are
+PRs waiting on you, so both are asked for and the answers merged. A PR two
+searches both find is handed over once.
 
-A repo not named in the file is never watched. Not queried, not touched, not
-on the server: there is no default that means "every repo your token can see",
-and no flag or environment variable that widens the list. An empty file, or
-none, means nothing is watched, and each check says so in the log.
-`DEEP_REVIEW_REPO` still names the repo a bare PR number refers to; it plays
-no part in what is watched.
+There used to be a list of repos here instead, each queried separately, and
+that list was the source of truth for what you were reviewing. It made a poor
+one: a PR waiting on you in a repo nobody had named was invisible, and naming
+repos is work GitHub already does. An old file is still read — its repos
+become repo-scoped searches, so an upgrade watches what it watched yesterday
+— and saving from the app rewrites it in the new shape.
 
-"Waiting on your review" is narrower than "assigned to you": a draft is not
-ready to be read, so drafts are excluded. Approved PRs are not — GitHub's
-`review:approved` means approved by *anyone*, so filtering on it would hide a
-PR one colleague has approved while your review is still requested. They come
-through marked approved instead, for the index's box to hide. The default
-review query, for each repo, is exactly:
+What the repo list was protecting against is still real. A search bound to
+nobody and nowhere returns every PR the token can see, and one night that
+quietly handed six PRs from a personal repo to the server. So every search
+must name a person, an owner or a repo — `assignee:@me`, `user:acme`,
+`repo:acme/widgets` — and one that names none is skipped with a note in the
+log rather than asked. Narrowing is the search's job: add `user:acme` to
+watch one org, `repo:acme/widgets` to watch one repo. `pr-review watch --repo
+<owner>/<repo>` is sugar for the latter. The file is read on every check, so
+changing it needs no reinstall. `DEEP_REVIEW_REPO` still names the repo a bare
+PR number refers to; it plays no part in what is searched for.
 
-```
-is:open is:pr assignee:@me archived:false -is:draft repo:<owner>/<repo>
-```
+In the desktop app, Settings shows each search with the number of PRs it
+finds right now, so a search can be judged before it is saved and starts
+building what it matches.
 
-and the default authored query, drafts included since a draft of yours is
-still yours:
-
-```
-is:open is:pr author:@me archived:false repo:<owner>/<repo>
-```
+"Waiting on your review" is narrower than "open and yours to worry about": a
+draft is not ready to be read, so drafts are excluded. Approved PRs are not —
+GitHub's `review:approved` means approved by *anyone*, so filtering on it
+would hide a PR one colleague has approved while your review is still
+requested. They come through marked approved instead, for the index's box to
+hide.
 
 A PR in both lists — one you opened and assigned to yourself — is yours, and
 appears once, under My PRs.

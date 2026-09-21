@@ -1,81 +1,116 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { DEFAULT_AUTHORED_SEARCHES, DEFAULT_REVIEW_SEARCHES } from "@deep-review/pr";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   addWatchedRepo,
   parseWatchConfig,
   readWatchConfig,
+  searchesForRepo,
   watchConfigFile,
+  writeWatchConfig,
 } from "./watchConfig.js";
 
 describe("parseWatchConfig", () => {
-  it("reads a repo named with an empty entry as one to watch with the default query", () => {
-    // Naming the repo is all opting in should take.
-    expect(parseWatchConfig({ repos: { "acme/widgets": {} } })).toEqual({
-      repos: [{ repo: "acme/widgets" }],
-      problems: [],
-    });
-  });
-
-  it("keeps each repo's own query, trimmed", () => {
+  it("reads the searches behind each tab, in order", () => {
     const parsed = parseWatchConfig({
-      repos: { "acme/widgets": { query: " is:open is:pr review-requested:@me " } },
+      searches: { review: ["is:open is:pr assignee:@me"], authored: ["is:open is:pr author:@me"] },
     });
-    expect(parsed.repos).toEqual([{ repo: "acme/widgets", query: "is:open is:pr review-requested:@me" }]);
-  });
-
-  it("keeps a repo's own authored query too, under the same rules", () => {
-    const parsed = parseWatchConfig({
-      repos: {
-        "acme/widgets": { authoredQuery: " is:open is:pr author:@me -is:draft " },
-        "acme/gadgets": { authoredQuery: "is:open repo:acme/other" },
-        "acme/gizmos": { authoredQuery: 3 },
-      },
-    });
-    expect(parsed.repos).toEqual([{ repo: "acme/widgets", authoredQuery: "is:open is:pr author:@me -is:draft" }]);
-    expect(parsed.problems).toEqual([
-      expect.stringMatching(/acme\/gadgets: its authoredQuery names a repo/),
-      expect.stringMatching(/acme\/gizmos: "authoredQuery" should be a non-empty string/),
+    expect(parsed.review).toEqual(["is:open is:pr assignee:@me"]);
+    expect(parsed.authored).toEqual(["is:open is:pr author:@me"]);
+    expect(parsed.searches).toEqual([
+      { role: "review", query: "is:open is:pr assignee:@me" },
+      { role: "authored", query: "is:open is:pr author:@me" },
     ]);
+    expect(parsed.problems).toEqual([]);
+    expect(parsed.fromDefaults).toBe(false);
   });
 
-  it("reads no repos from a document without any", () => {
-    // `{}` and `{"repos": {}}` both mean watch nothing — never everything.
-    expect(parseWatchConfig({}).repos).toEqual([]);
-    expect(parseWatchConfig({ repos: {} }).repos).toEqual([]);
-    expect(parseWatchConfig(null).repos).toEqual([]);
-  });
-
-  it("skips an entry whose query names a repo, since that would widen the search", () => {
+  it("takes several searches for one tab, since GitHub cannot OR two qualifiers", () => {
     const parsed = parseWatchConfig({
-      repos: { "acme/widgets": { query: "is:open repo:acme/other" }, "acme/gadgets": {} },
+      searches: { review: ["is:open assignee:@me", "is:open review-requested:@me"], authored: [] },
     });
-    expect(parsed.repos).toEqual([{ repo: "acme/gadgets" }]);
-    expect(parsed.problems).toEqual([expect.stringMatching(/acme\/widgets: its query names a repo/)]);
+    expect(parsed.searches.map((s) => s.role)).toEqual(["review", "review"]);
+    expect(parsed.authored).toEqual([]);
   });
 
-  it("skips what it cannot make sense of, naming each problem, and keeps the rest", () => {
+  it("trims each search and keeps one written as a bare string", () => {
+    const parsed = parseWatchConfig({ searches: { review: "  is:open assignee:@me  " } });
+    expect(parsed.review).toEqual(["is:open assignee:@me"]);
+    // A tab the file says nothing about keeps its default.
+    expect(parsed.authored).toEqual(DEFAULT_AUTHORED_SEARCHES);
+  });
+
+  it("falls back to the searches that name you when the document says nothing", () => {
+    // `{}` and no document at all both mean the defaults, which are bound
+    // by `@me`; they can never mean every PR the token can see.
+    for (const doc of [{}, null, { searches: { review: [], authored: [] } }]) {
+      const parsed = parseWatchConfig(doc);
+      expect(parsed.review).toEqual(DEFAULT_REVIEW_SEARCHES);
+      expect(parsed.authored).toEqual(DEFAULT_AUTHORED_SEARCHES);
+      expect(parsed.fromDefaults).toBe(true);
+    }
+  });
+
+  it("skips a search bound to nobody and nowhere, naming the problem", () => {
     const parsed = parseWatchConfig({
-      repos: {
-        "not-a-repo": {},
-        "acme/widgets": "is:open",
-        "acme/gadgets": { query: 7 },
-        "acme/gizmos": { query: "" },
-        "acme/things": {},
-      },
+      searches: { review: ["is:open is:pr", "is:open is:pr repo:acme/widgets"], authored: [] },
     });
-    expect(parsed.repos).toEqual([{ repo: "acme/things" }]);
-    expect(parsed.problems).toHaveLength(4);
+    expect(parsed.review).toEqual(["is:open is:pr repo:acme/widgets"]);
+    expect(parsed.problems).toEqual([expect.stringMatching(/names nobody and nowhere/)]);
   });
 
-  it("reports a repos field of the wrong shape rather than guessing at it", () => {
-    expect(parseWatchConfig({ repos: ["acme/widgets"] }).repos).toEqual([]);
-    expect(parseWatchConfig({ repos: ["acme/widgets"] }).problems).toHaveLength(1);
+  it("skips what is not a string, and reports a searches field of the wrong shape", () => {
+    const parsed = parseWatchConfig({ searches: { review: [7, "", "is:open assignee:@me"], authored: [] } });
+    expect(parsed.review).toEqual(["is:open assignee:@me"]);
+    expect(parsed.problems).toHaveLength(2);
+    expect(parseWatchConfig({ searches: ["is:open"] }).problems).toHaveLength(1);
+    expect(parseWatchConfig({ searches: ["is:open"] }).fromDefaults).toBe(true);
+  });
+
+  it("reads an old repo-list file as the searches those repos stood for", () => {
+    // An upgrade must watch what it watched yesterday, not everything.
+    const parsed = parseWatchConfig({ repos: { "acme/widgets": {} } });
+    expect(parsed.migrated).toBe(true);
+    expect(parsed.review).toEqual(DEFAULT_REVIEW_SEARCHES.map((q) => `${q} repo:acme/widgets`));
+    expect(parsed.authored).toEqual(DEFAULT_AUTHORED_SEARCHES.map((q) => `${q} repo:acme/widgets`));
+  });
+
+  it("keeps an old entry's own queries when reading it, scoped to its repo", () => {
+    const parsed = parseWatchConfig({
+      repos: { "acme/widgets": { query: "is:open label:x", authoredQuery: "is:open author:@me -is:draft" } },
+    });
+    expect(parsed.review).toEqual(["is:open label:x repo:acme/widgets"]);
+    expect(parsed.authored).toEqual(["is:open author:@me -is:draft repo:acme/widgets"]);
+  });
+
+  it("skips an old entry whose key is not an owner/repo", () => {
+    const parsed = parseWatchConfig({ repos: { "not-a-repo": {}, "acme/widgets": {} } });
+    expect(parsed.review.every((q) => q.endsWith("repo:acme/widgets"))).toBe(true);
+    expect(parsed.problems).toEqual([expect.stringMatching(/not an owner\/repo/)]);
+  });
+
+  it("prefers searches over a repo list when a file carries both", () => {
+    const parsed = parseWatchConfig({
+      searches: { review: ["is:open assignee:@me"], authored: [] },
+      repos: { "acme/widgets": {} },
+    });
+    expect(parsed.review).toEqual(["is:open assignee:@me"]);
+    expect(parsed.migrated).toBe(false);
   });
 });
 
-describe("readWatchConfig / addWatchedRepo", () => {
+describe("searchesForRepo", () => {
+  it("narrows both tabs' defaults to one repo", () => {
+    expect(searchesForRepo("acme/widgets")).toEqual({
+      review: DEFAULT_REVIEW_SEARCHES.map((q) => `${q} repo:acme/widgets`),
+      authored: DEFAULT_AUTHORED_SEARCHES.map((q) => `${q} repo:acme/widgets`),
+    });
+  });
+});
+
+describe("readWatchConfig / writeWatchConfig / addWatchedRepo", () => {
   let home: string;
 
   beforeEach(() => {
@@ -92,52 +127,56 @@ describe("readWatchConfig / addWatchedRepo", () => {
     expect(watchConfigFile()).toBe(path.join(home, "watch.json"));
   });
 
-  it("reads no repos and no problems when there is no file", () => {
-    // A fresh install; nothing is wrong, and nothing is watched.
-    expect(readWatchConfig()).toEqual({ repos: [], problems: [] });
+  it("reads the defaults, with no problems, when there is no file", () => {
+    const parsed = readWatchConfig();
+    expect(parsed.review).toEqual(DEFAULT_REVIEW_SEARCHES);
+    expect(parsed.fromDefaults).toBe(true);
+    expect(parsed.problems).toEqual([]);
   });
 
-  it("reads no repos and one problem when the file is not JSON", () => {
+  it("reads the defaults and one problem when the file is not JSON", () => {
     writeFileSync(watchConfigFile(), "nope");
     const parsed = readWatchConfig();
-    expect(parsed.repos).toEqual([]);
+    expect(parsed.review).toEqual(DEFAULT_REVIEW_SEARCHES);
     expect(parsed.problems).toEqual([expect.stringContaining("could not be read")]);
   });
 
-  it("adds a repo to a file that did not exist, as a readable document", () => {
+  it("writes both tabs' searches as a readable document, and reads them back", () => {
+    writeWatchConfig({ review: ["is:open is:pr user:spara-ai assignee:@me"], authored: ["is:open is:pr author:@me"] });
+    expect(JSON.parse(readFileSync(watchConfigFile(), "utf8"))).toEqual({
+      searches: { review: ["is:open is:pr user:spara-ai assignee:@me"], authored: ["is:open is:pr author:@me"] },
+    });
+    expect(readWatchConfig().review).toEqual(["is:open is:pr user:spara-ai assignee:@me"]);
+  });
+
+  it("narrows the defaults to one repo rather than adding to them", () => {
+    // The defaults are unscoped; keeping them beside a repo-scoped search
+    // would still bring in everything, which is not what --repo asks for.
     const { added } = addWatchedRepo("acme/widgets");
     expect(added).toBe(true);
-    expect(JSON.parse(readFileSync(watchConfigFile(), "utf8"))).toEqual({
-      repos: { "acme/widgets": {} },
-    });
+    expect(readWatchConfig().review).toEqual(DEFAULT_REVIEW_SEARCHES.map((q) => `${q} repo:acme/widgets`));
   });
 
-  it("adds a repo beside the ones already there, keeping their queries", () => {
-    writeFileSync(
-      watchConfigFile(),
-      JSON.stringify({ repos: { "acme/gadgets": { query: "is:open label:x" } } }),
-    );
+  it("adds a repo beside the ones already narrowed to", () => {
+    addWatchedRepo("acme/gadgets");
     addWatchedRepo("acme/widgets");
-    expect(readWatchConfig().repos).toEqual([
-      { repo: "acme/gadgets", query: "is:open label:x" },
-      { repo: "acme/widgets" },
-    ]);
+    const review = readWatchConfig().review;
+    expect(review.some((q) => q.endsWith("repo:acme/gadgets"))).toBe(true);
+    expect(review.some((q) => q.endsWith("repo:acme/widgets"))).toBe(true);
   });
 
-  it("leaves a repo already named alone, query and all", () => {
-    writeFileSync(
-      watchConfigFile(),
-      JSON.stringify({ repos: { "acme/widgets": { query: "is:open label:x" } } }),
-    );
+  it("leaves a repo already searched for alone", () => {
+    addWatchedRepo("acme/widgets");
+    const before = readFileSync(watchConfigFile(), "utf8");
     expect(addWatchedRepo("acme/widgets").added).toBe(false);
-    expect(readWatchConfig().repos).toEqual([{ repo: "acme/widgets", query: "is:open label:x" }]);
+    expect(readFileSync(watchConfigFile(), "utf8")).toBe(before);
   });
 
-  it("refuses to overwrite a file it cannot parse", () => {
-    // Whatever that file was trying to say would be lost; it is the user's
-    // to fix, not one flag's to replace.
-    writeFileSync(watchConfigFile(), "{ not json");
-    expect(() => addWatchedRepo("acme/widgets")).toThrow();
-    expect(readFileSync(watchConfigFile(), "utf8")).toBe("{ not json");
+  it("reads an old repo-list file, so --repo on one keeps the other", () => {
+    writeFileSync(watchConfigFile(), JSON.stringify({ repos: { "acme/gadgets": {} } }));
+    addWatchedRepo("acme/widgets");
+    const review = readWatchConfig().review;
+    expect(review.some((q) => q.endsWith("repo:acme/gadgets"))).toBe(true);
+    expect(review.some((q) => q.endsWith("repo:acme/widgets"))).toBe(true);
   });
 });

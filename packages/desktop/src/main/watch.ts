@@ -43,7 +43,7 @@ export function startWatchLoop(options: {
 
   const status = (): WatchStatus => ({
     hasToken: hasGithubToken(),
-    repos: readWatchConfig().repos.length,
+    searches: readWatchConfig().searches.length,
     polling,
     lastPollAt,
     lastError,

@@ -22,10 +22,27 @@ export interface Settings {
   openAtLogin: boolean;
 }
 
-export interface WatchedRepoEntry {
-  repo: string;
-  query?: string | undefined;
-  authoredQuery?: string | undefined;
+/**
+ * What the index's two tabs are built from: GitHub searches, the same ones
+ * github.com/pulls takes. A list per tab because GitHub cannot OR two
+ * qualifiers in one query — "assigned to me" and "review requested from me"
+ * are two searches whose answers are merged.
+ */
+export interface SearchConfig {
+  review: string[];
+  authored: string[];
+  /** Whether these are the defaults rather than anything chosen. */
+  fromDefaults: boolean;
+  /** Searches the file carried that will not be run, and why. */
+  problems: string[];
+}
+
+/** What one search would find right now, without handing anything to the server. */
+export interface SearchPreview {
+  /** How many open PRs match. */
+  count: number;
+  /** A few of them, newest first, to show what was matched. */
+  sample: { key: string; title: string }[];
 }
 
 /** Who the app is signed in to GitHub as. */
@@ -48,8 +65,8 @@ export interface DevicePrompt {
 export interface WatchStatus {
   /** A GitHub token is in place; without one nothing is polled. */
   hasToken: boolean;
-  /** How many repos the watcher polls. */
-  repos: number;
+  /** How many searches the watcher runs. */
+  searches: number;
   polling: boolean;
   lastPollAt: number | null;
   /** Why the last poll failed, when it did; null after a good one. */
@@ -68,9 +85,12 @@ export interface SettingsAPI {
 }
 
 export interface WatchAPI {
-  list: () => Promise<Result<WatchedRepoEntry[]>>;
-  add: (repo: string) => Promise<Result>;
-  remove: (repo: string) => Promise<Result>;
+  /** The searches behind each tab. */
+  searches: () => Promise<Result<SearchConfig>>;
+  /** Replace them. Takes queries or pasted GitHub search URLs. */
+  setSearches: (config: { review: string[]; authored: string[] }) => Promise<Result<SearchConfig>>;
+  /** What one search finds right now, so it can be judged before it is saved. */
+  preview: (query: string) => Promise<Result<SearchPreview>>;
   /** Poll GitHub now rather than at the next interval. */
   pollNow: () => Promise<Result>;
   status: () => Promise<Result<WatchStatus>>;

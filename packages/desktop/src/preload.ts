@@ -21,9 +21,9 @@ const settings: SettingsAPI = {
 };
 
 const watch: WatchAPI = {
-  list: () => ipcRenderer.invoke("watch:list"),
-  add: (repo: string) => ipcRenderer.invoke("watch:add", repo),
-  remove: (repo: string) => ipcRenderer.invoke("watch:remove", repo),
+  searches: () => ipcRenderer.invoke("watch:searches"),
+  setSearches: (config) => ipcRenderer.invoke("watch:set-searches", config),
+  preview: (query: string) => ipcRenderer.invoke("watch:preview", query),
   pollNow: () => ipcRenderer.invoke("watch:poll-now"),
   status: () => ipcRenderer.invoke("watch:status"),
   onStatus: (callback) => {

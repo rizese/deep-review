@@ -37,9 +37,11 @@ export function useWatchStatusSource(): WatchStatus | null {
 }
 
 /** Whether the watcher can do its job at all; what is missing when it cannot. */
-export function setupGap(status: WatchStatus | null): "token" | "repos" | null {
+export function setupGap(status: WatchStatus | null): "token" | "searches" | null {
   if (!status) return null;
   if (!status.hasToken) return "token";
-  if (status.repos === 0) return "repos";
+  // There are always defaults, so no searches means every one of them was
+  // refused — a file someone wrote by hand and got wrong.
+  if (status.searches === 0) return "searches";
   return null;
 }

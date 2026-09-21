@@ -122,21 +122,21 @@ function Card({ pr, hidden }: { pr: PrView; hidden: boolean }): JSX.Element {
  * repo to watch. Either way the way forward is Settings, and a PR link can
  * be dropped or pasted in the meantime.
  */
-function Setup({ gap, held }: { gap: "token" | "repos"; held: number }): JSX.Element {
+function Setup({ gap, held }: { gap: "token" | "searches"; held: number }): JSX.Element {
   const meantime = held > 0 ? "The PRs below are what the server already holds; the list will not change until it can look." : "Or drop a PR link anywhere in this window, or paste one.";
   return (
     <section className={styles.setup} aria-label="Set up">
       <div>
-        <div className={styles.setupTitle}>{gap === "token" ? "Sign in to GitHub to start watching" : "Name a repo to watch"}</div>
+        <div className={styles.setupTitle}>{gap === "token" ? "Sign in to GitHub to start watching" : "Nothing is being searched for"}</div>
         <div className={styles.setupBody}>
           {gap === "token"
             ? "Deep Review looks for the PRs waiting on your review and builds a reading of each one. It needs your GitHub account to look."
-            : "You are signed in. Watch a repo and the PRs waiting on you there appear here as they are built."}{" "}
+            : "You are signed in, but every search was refused. A search has to name somebody or somewhere."}{" "}
           {meantime}
         </div>
       </div>
       <Button variant="primary" onClick={() => go("/settings")}>
-        {gap === "token" ? "Sign in with GitHub" : "Watch a repo"}
+        {gap === "token" ? "Sign in with GitHub" : "Fix the searches"}
       </Button>
     </section>
   );
@@ -202,7 +202,7 @@ export function Index(): JSX.Element {
           <div className={styles.empty}>
             None of your PRs are open here. {hidden > 0 && <span>{`${hidden} approved PR${hidden === 1 ? " is" : "s are"} hidden.`}</span>}
             <div>
-              The watcher adds the PRs you open in each watched repo; <code>pr-review watch --repo owner/repo</code> names one.
+              The My PRs tab is a GitHub search; Settings says which one.
             </div>
           </div>
         )}

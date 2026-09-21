@@ -4,17 +4,17 @@ import { app, BrowserWindow, ipcMain, Menu, nativeImage, Notification, shell, Tr
 import { electronApp, is, optimizer } from "@electron-toolkit/utils";
 import { findServer, runDaemon, stopServer } from "@deep-review/review/daemon";
 import { stateDir } from "@deep-review/review/paths";
-import { addWatchedRepo, readWatchConfig, watchConfigFile } from "@deep-review/review/watchConfig";
+import { readWatchConfig, writeWatchConfig } from "@deep-review/review/watchConfig";
+import { parseSearchInput, searchPrs, type PrSearch } from "@deep-review/pr";
 import { readWatcherState } from "@deep-review/review/watcher";
 import { agentInstalled, uninstallAgent } from "@deep-review/review/launchAgent";
-import { readFileSync, writeFileSync } from "node:fs";
 import type { PrView } from "@deep-review/review/api";
 import type { NavServer } from "@deep-review/review/daemon";
 import { startBadge, type Badge } from "./main/badge.js";
 import { cliToken, identityOf, startDeviceFlow, waitForToken } from "./main/githubAuth.js";
 import { applyToEnvironment, readSettings, writeSettings } from "./main/settings.js";
 import { hasGithubToken, startWatchLoop, type WatchLoop } from "./main/watch.js";
-import type { DevicePrompt, GithubIdentity, Result, Settings, WatchedRepoEntry, WatchStatus } from "./types/electronAPI.js";
+import type { DevicePrompt, GithubIdentity, Result, SearchConfig, SearchPreview, Settings, WatchStatus } from "./types/electronAPI.js";
 
 /**
  * Deep Review as an app. The main process is the review server — the same
@@ -291,32 +291,39 @@ function registerIpc(): void {
       return failed(error);
     }
   });
-  ipcMain.handle("watch:list", (): Result<WatchedRepoEntry[]> => {
+  ipcMain.handle("watch:searches", (): Result<SearchConfig> => {
     try {
-      return ok(readWatchConfig().repos.map((r) => ({ repo: r.repo, query: r.query, authoredQuery: r.authoredQuery })));
+      const config = readWatchConfig();
+      return ok({ review: config.review, authored: config.authored, fromDefaults: config.fromDefaults, problems: config.problems });
     } catch (error) {
       return failed(error);
     }
   });
-  ipcMain.handle("watch:add", (_event, repo: string): Result => {
+  ipcMain.handle("watch:set-searches", (_event, config: { review: string[]; authored: string[] }): Result<SearchConfig> => {
     try {
-      if (!/^[^/\s]+\/[^/\s]+$/.test(repo)) throw new Error(`${JSON.stringify(repo)} is not an owner/repo`);
-      addWatchedRepo(repo);
+      // What was typed may be a query or the URL of a GitHub search page,
+      // which is where these get built; either way the query is what is kept.
+      const clean = (list: unknown): string[] =>
+        (Array.isArray(list) ? list : []).map((q) => parseSearchInput(String(q))).filter((q) => q.length > 0);
+      writeWatchConfig({ review: clean(config.review), authored: clean(config.authored) });
+      const saved = readWatchConfig();
       watchLoop?.refresh();
       void watchLoop?.pollNow();
-      return ok();
+      return ok({ review: saved.review, authored: saved.authored, fromDefaults: saved.fromDefaults, problems: saved.problems });
     } catch (error) {
       return failed(error);
     }
   });
-  ipcMain.handle("watch:remove", (_event, repo: string): Result => {
+  ipcMain.handle("watch:preview", async (_event, query: string): Promise<Result<SearchPreview>> => {
     try {
-      const file = watchConfigFile();
-      const doc = JSON.parse(readFileSync(file, "utf8")) as { repos?: Record<string, unknown> };
-      if (doc.repos) delete doc.repos[repo];
-      writeFileSync(file, `${JSON.stringify(doc, null, 2)}\n`);
-      watchLoop?.refresh();
-      return ok();
+      // Only asks GitHub; nothing here reaches the server, so a search can
+      // be judged before it is saved and starts building what it finds.
+      const search: PrSearch = { role: "review", query: parseSearchInput(String(query)) };
+      const found = await searchPrs([search]);
+      return ok({
+        count: found.length,
+        sample: found.slice(0, 5).map((pr) => ({ key: `${pr.owner}/${pr.repo}#${pr.number}`, title: pr.title })),
+      });
     } catch (error) {
       return failed(error);
     }

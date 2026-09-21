@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState, type FormEvent, type JSX } from "react";
-import type { ElectronAPI, Settings as SettingsValues, WatchedRepoEntry } from "../../../types/electronAPI.js";
+import type { ElectronAPI, Settings as SettingsValues } from "../../../types/electronAPI.js";
 import { Button } from "../components/Button.js";
 import { GithubSignIn } from "../components/GithubSignIn.js";
+import { Searches } from "../components/Searches.js";
 import styles from "./Settings.module.css";
 
 interface KeyField {
@@ -28,9 +29,6 @@ const EMPTY: SettingsValues = {
   githubClientId: "",
   openAtLogin: false,
 };
-
-/** `owner/repo`, the only shape the watcher takes. */
-const REPO = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
 
 interface Note {
   text: string;
@@ -165,61 +163,10 @@ function Keys({ api }: { api: ElectronAPI }): JSX.Element {
   );
 }
 
-/** The repos the watcher polls, and a way to make it poll now. */
-function Repos({ api }: { api: ElectronAPI }): JSX.Element {
-  const [repos, setRepos] = useState<WatchedRepoEntry[]>([]);
-  const [draft, setDraft] = useState("");
-  const [busy, setBusy] = useState(false);
+/** A way to make the watcher look now, beside what it looks for. */
+function CheckNow({ api }: { api: ElectronAPI }): JSX.Element {
   const [polling, setPolling] = useState(false);
   const [note, setNote] = useState<Note | null>(null);
-
-  const load = useCallback(async (): Promise<void> => {
-    try {
-      const result = await api.watch.list();
-      if (result.success && result.data) setRepos(result.data);
-      else setNote({ text: result.error ?? "could not read the watch list", bad: true });
-    } catch (error) {
-      setNote({ text: reason(error, "could not read the watch list"), bad: true });
-    }
-  }, [api]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const add = async (e: FormEvent): Promise<void> => {
-    e.preventDefault();
-    const repo = draft.trim();
-    if (!REPO.test(repo)) {
-      setNote({ text: "name a repo as owner/repo", bad: true });
-      return;
-    }
-    setBusy(true);
-    setNote(null);
-    try {
-      const result = await api.watch.add(repo);
-      if (result.success) {
-        setDraft("");
-        await load();
-      } else setNote({ text: result.error ?? "could not watch that repo", bad: true });
-    } catch (error) {
-      setNote({ text: reason(error, "could not watch that repo"), bad: true });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const remove = async (repo: string): Promise<void> => {
-    setNote(null);
-    try {
-      const result = await api.watch.remove(repo);
-      if (result.success) await load();
-      else setNote({ text: result.error ?? "could not stop watching that repo", bad: true });
-    } catch (error) {
-      setNote({ text: reason(error, "could not stop watching that repo"), bad: true });
-    }
-  };
-
   const pollNow = async (): Promise<void> => {
     setPolling(true);
     setNote(null);
@@ -232,51 +179,13 @@ function Repos({ api }: { api: ElectronAPI }): JSX.Element {
       setPolling(false);
     }
   };
-
   return (
-    <section className={styles.card} aria-label="Watched repos">
-      <div className={styles.label}>Watched repos</div>
-      {repos.length > 0 ? (
-        <div className={styles.repos}>
-          {repos.map((entry) => (
-            <div className={styles.repo} key={entry.repo}>
-              <div>
-                <div className={styles.repoName}>{entry.repo}</div>
-                {entry.query && <div className={styles.query}>for review: {entry.query}</div>}
-                {entry.authoredQuery && <div className={styles.query}>authored: {entry.authoredQuery}</div>}
-              </div>
-              <Button variant="danger" size="sm" aria-label={`Stop watching ${entry.repo}`} onClick={() => void remove(entry.repo)}>
-                remove
-              </Button>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className={styles.none}>No repos watched yet; the PRs here are the ones added by hand.</div>
-      )}
-      <form className={styles.add} aria-label="Watch a repo" onSubmit={(e) => void add(e)}>
-        <input
-          className={styles.input}
-          type="text"
-          aria-label="Repo to watch"
-          placeholder="owner/repo"
-          autoComplete="off"
-          spellCheck={false}
-          value={draft}
-          onChange={(e) => {
-            setDraft(e.target.value);
-            setNote(null);
-          }}
-        />
-        <Button variant="primary" type="submit" disabled={busy}>
-          Add
-        </Button>
-        <Button disabled={polling} onClick={() => void pollNow()}>
-          {polling ? "Checking…" : "Check GitHub now"}
-        </Button>
-        {note && <span className={`${styles.note} ${note.bad ? styles.bad : styles.ok}`}>{note.text}</span>}
-      </form>
-    </section>
+    <div className={styles.actions}>
+      <Button disabled={polling} onClick={() => void pollNow()}>
+        {polling ? "Checking…" : "Check GitHub now"}
+      </Button>
+      {note && <span className={`${styles.note} ${note.bad ? styles.bad : styles.ok}`}>{note.text}</span>}
+    </div>
   );
 }
 
@@ -359,8 +268,9 @@ export function Settings(): JSX.Element {
         {api ? (
           <>
             <GithubSignIn api={api} />
+            <Searches api={api} />
+            <CheckNow api={api} />
             <Keys api={api} />
-            <Repos api={api} />
             <About api={api} />
           </>
         ) : (
