@@ -10,7 +10,7 @@ import type {
   PathNode,
 } from "./types.js";
 
-export interface SideGraphNode {
+interface SideGraphNode {
   name: string;
   snapshot: FunctionSnapshot;
   /** True if this node's callers/callees were walked. */

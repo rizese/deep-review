@@ -26,8 +26,3 @@ export function interceptLinks(): () => void {
   document.addEventListener("click", onClick);
   return () => document.removeEventListener("click", onClick);
 }
-
-/** The current address, kept current through popstate. */
-export function currentPath(): string {
-  return location.pathname;
-}

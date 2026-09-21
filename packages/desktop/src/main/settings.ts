@@ -13,7 +13,7 @@ import process from "node:process";
 import { app, safeStorage } from "electron";
 import type { Settings } from "../types/electronAPI.js";
 
-export const DEFAULT_SETTINGS: Settings = {
+const DEFAULT_SETTINGS: Settings = {
   githubToken: "",
   openaiApiKey: "",
   anthropicApiKey: "",

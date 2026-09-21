@@ -13,7 +13,7 @@ import { Settings } from "./pages/Settings.js";
 const PR_PATH = /^\/pr\/([^/]+)\/([^/]+)\/(\d+)\/$/;
 
 /** A PR's mount path taken apart, or null for anything else. */
-export function parsePath(path: string): PrRef | null {
+function parsePath(path: string): PrRef | null {
   const m = PR_PATH.exec(path);
   return m ? { owner: decodeURIComponent(m[1]!), repo: decodeURIComponent(m[2]!), number: Number(m[3]) } : null;
 }

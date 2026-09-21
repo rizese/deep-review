@@ -30,7 +30,6 @@ export { renderMarkdown } from "../../../../../call-graph/src/markdown.js";
 export type {
   CallPathResult,
   CallSite,
-  DefinitionTarget,
   DiffHunk,
   PathNode,
   ReferenceList,

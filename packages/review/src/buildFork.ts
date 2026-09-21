@@ -25,7 +25,7 @@ import {
 import type { BuildPr, BuiltPr } from "./registry.js";
 
 /** What a build request looks like on the wire; the same shape `BuildPr` takes. */
-export type BuildRequest = Parameters<BuildPr>[0];
+type BuildRequest = Parameters<BuildPr>[0];
 
 export type WorkerToParent =
   | { type: "log"; message: string }

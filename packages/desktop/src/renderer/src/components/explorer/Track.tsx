@@ -9,7 +9,7 @@ import { RefMenu, type RefMenuState } from "./RefMenu.js";
 import { SlicePanel } from "./SlicePanel.js";
 
 /** Where a clicked link sits, in terms a fresh copy of its panel can answer. */
-export interface OriginDesc {
+interface OriginDesc {
   row?: string | undefined;
   def?: string | null | undefined;
   target?: string | null | undefined;

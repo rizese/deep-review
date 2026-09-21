@@ -68,9 +68,6 @@ importers:
       '@deep-review/slicer':
         specifier: workspace:*
         version: link:../slicer
-      '@electron-toolkit/preload':
-        specifier: ^3.0.1
-        version: 3.0.2(electron@31.7.5)
       '@electron-toolkit/utils':
         specifier: ^3.0.0
         version: 3.0.0(electron@31.7.5)
@@ -102,9 +99,6 @@ importers:
         specifier: ^3.25.76
         version: 3.25.76
     devDependencies:
-      '@electron-toolkit/tsconfig':
-        specifier: ^1.0.1
-        version: 1.0.1(@types/node@22.20.1)
       '@types/react':
         specifier: ^19.0.8
         version: 19.3.0
@@ -315,16 +309,6 @@ packages:
   '@develar/schema-utils@2.6.5':
     resolution: {integrity: sha512-0cp4PsWQ/9avqTVMCtZ+GirikIA36ikvjtHweU4/j8yLtgObI0+JUPhYFScgwlteveGB1rt3Cm8UhN04XayDig==}
     engines: {node: '>= 8.9.0'}
-
-  '@electron-toolkit/preload@3.0.2':
-    resolution: {integrity: sha512-TWWPToXd8qPRfSXwzf5KVhpXMfONaUuRAZJHsKthKgZR/+LqX1dZVSSClQ8OTAEduvLGdecljCsoT2jSshfoUg==}
-    peerDependencies:
-      electron: '>=13.0.0'
-
-  '@electron-toolkit/tsconfig@1.0.1':
-    resolution: {integrity: sha512-M0Mol3odspvtCuheyujLNAW7bXq7KFNYVMRtpjFa4ZfES4MuklXBC7Nli/omvc+PRKlrklgAGx3l4VakjNo8jg==}
-    peerDependencies:
-      '@types/node': '*'
 
   '@electron-toolkit/utils@3.0.0':
     resolution: {integrity: sha512-GaXHDhiT7KCvMJjXdp/QqpYinq69T/Pdl49Z1XLf8mKGf63dnsODMWyrmIjEQ0z/vG7dO8qF3fvmI6Eb2lUNZA==}
@@ -2907,14 +2891,6 @@ snapshots:
     dependencies:
       ajv: 6.15.0
       ajv-keywords: 3.5.2(ajv@6.15.0)
-
-  '@electron-toolkit/preload@3.0.2(electron@31.7.5)':
-    dependencies:
-      electron: 31.7.5
-
-  '@electron-toolkit/tsconfig@1.0.1(@types/node@22.20.1)':
-    dependencies:
-      '@types/node': 22.20.1
 
   '@electron-toolkit/utils@3.0.0(electron@31.7.5)':
     dependencies:

@@ -24,7 +24,6 @@
     "@deep-review/pr": "workspace:*",
     "@deep-review/review": "workspace:*",
     "@deep-review/slicer": "workspace:*",
-    "@electron-toolkit/preload": "^3.0.1",
     "@electron-toolkit/utils": "^3.0.0",
     "@icons-pack/react-simple-icons": "^13.15.1",
     "ai": "^7.0.107",
@@ -37,7 +36,6 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@electron-toolkit/tsconfig": "^1.0.1",
     "@types/react": "^19.0.8",
     "@types/react-dom": "^19.0.3",
     "@vitejs/plugin-react": "^4.3.4",

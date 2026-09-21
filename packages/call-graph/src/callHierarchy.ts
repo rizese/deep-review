@@ -10,7 +10,7 @@ import {
 } from "./backend.js";
 import type { CallSite, FunctionSnapshot, SymbolRange } from "./types.js";
 
-export type { FunctionRelations, RelationEntry } from "./backend.js";
+export type { FunctionRelations } from "./backend.js";
 
 export interface ProjectService {
   rootDir: string;

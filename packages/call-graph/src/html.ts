@@ -131,7 +131,7 @@ export function scopeLabelFor(symbols: readonly SymbolRange[], line: number): st
 // ---------------------------------------------------------------------------
 // Code blocks: line rows, expander gaps
 
-export interface LineDecoration {
+interface LineDecoration {
   /** Extra classes on the row, e.g. ["hl"] or ["diff-add"]. */
   cls?: string[];
   marks?: Mark[];

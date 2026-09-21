@@ -6,7 +6,7 @@
 import { definitionAt, defNames } from "./nav.js";
 import type { DefinitionAnswer } from "./callGraph.js";
 
-export interface SpanPosition {
+interface SpanPosition {
   file: string;
   side: string;
   line: number;
@@ -14,7 +14,7 @@ export interface SpanPosition {
 }
 
 /** Column of a span within its row's text: everything between the gutter and it. */
-export function columnOf(row: Element, span: Element): number {
+function columnOf(row: Element, span: Element): number {
   const lineno = row.querySelector(".lineno");
   if (!lineno) return -1;
   const range = document.createRange();
@@ -24,7 +24,7 @@ export function columnOf(row: Element, span: Element): number {
 }
 
 /** Where an identifier sits in the file its pane shows. */
-export function positionOf(span: Element): SpanPosition | null {
+function positionOf(span: Element): SpanPosition | null {
   const pane = span.closest(".code-pane") as HTMLElement | null;
   const row = span.closest(".line");
   if (!pane || !row || !pane.dataset.file) return null;

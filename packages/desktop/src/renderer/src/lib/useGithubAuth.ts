@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { DevicePrompt, GithubIdentity } from "../../../types/electronAPI.js";
 
-export interface AuthNote {
+interface AuthNote {
   text: string;
   bad: boolean;
 }

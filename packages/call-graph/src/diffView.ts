@@ -135,7 +135,7 @@ export interface FragmentSpan {
 }
 
 /** Lines of the head-side file shown either side of a fragment. */
-export const FRAGMENT_CONTEXT = 5;
+const FRAGMENT_CONTEXT = 5;
 
 /**
  * The head-side line ranges a file's fragments show: each fragment padded

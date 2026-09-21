@@ -13,12 +13,14 @@
  * without reaching GitHub.
  */
 
+import type { DevicePrompt } from "../types/electronAPI.js";
+
 const DEVICE_CODE_URL = "https://github.com/login/device/code";
 const TOKEN_URL = "https://github.com/login/oauth/access_token";
 const USER_URL = "https://api.github.com/user";
 
 /** What the watcher needs: its own PRs, the ones waiting on it, and private repos. */
-export const SCOPES = "repo read:org";
+const SCOPES = "repo read:org";
 
 /**
  * The OAuth App's client id, put here at build time from
@@ -40,14 +42,6 @@ export function clientIdOf(): string {
 
 export type Fetch = typeof globalThis.fetch;
 
-export interface DevicePrompt {
-  /** The code the reader types into GitHub. */
-  userCode: string;
-  /** Where they type it. */
-  verificationUri: string;
-  /** When the code stops working. */
-  expiresAt: number;
-}
 
 export interface GithubIdentity {
   login: string;

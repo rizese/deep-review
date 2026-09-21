@@ -26,7 +26,6 @@ const PANEL_CONTEXT = 10;
 /** Panel id of a definition: a graph node keeps its own; anything else is `def:<id>`. */
 import { definitionPanelId } from "./navSession.js";
 
-export { definitionPanelId };
 
 export interface PanelOptions {
   /** Debug builds: every mark says where it came from (`data-why`). */

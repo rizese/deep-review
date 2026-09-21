@@ -21,7 +21,7 @@ export interface WatchLoop {
   stop(): void;
 }
 
-export const NO_TOKEN = "no GitHub token";
+const NO_TOKEN = "no GitHub token";
 
 export function hasGithubToken(): boolean {
   return Boolean(process.env.GITHUB_TOKEN || process.env.GH_TOKEN);

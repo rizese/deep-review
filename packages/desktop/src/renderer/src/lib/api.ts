@@ -5,7 +5,7 @@
  */
 import type { PrFacts, PrFailure, PrState, PrView, RegistryEvent } from "@deep-review/review/api";
 
-export type { PrFacts, PrFailure, PrState, PrView, RegistryEvent };
+export type { PrView, RegistryEvent };
 
 export async function listPrs(): Promise<PrView[]> {
   const res = await fetch("/prs", { cache: "no-store" });
