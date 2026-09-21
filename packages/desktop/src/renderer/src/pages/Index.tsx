@@ -1,5 +1,6 @@
 import type { JSX } from "react";
 import { SiGithub } from "@icons-pack/react-simple-icons";
+import { Trash2 } from "lucide-react";
 import type { MouseEvent } from "react";
 import { Button } from "../components/Button.js";
 import { SizeBar } from "../components/SizeBar.js";
@@ -109,9 +110,15 @@ function Card({ pr, hidden }: { pr: PrView; hidden: boolean }): JSX.Element {
         <a className={styles.gh} href={pr.prUrl} target="_blank" rel="noopener" title="Open on GitHub" aria-label="Open on GitHub">
           <SiGithub aria-hidden="true" />
         </a>
-        <Button variant="danger" size="sm" title="Drop this PR from the server" onClick={() => void forgetPr(pr.key)}>
-          forget
-        </Button>
+        <button
+          className={styles.forget}
+          type="button"
+          title="Drop this PR from the server"
+          aria-label="Drop this PR from the server"
+          onClick={() => void forgetPr(pr.key)}
+        >
+          <Trash2 aria-hidden="true" />
+        </button>
       </div>
     </div>
   );
