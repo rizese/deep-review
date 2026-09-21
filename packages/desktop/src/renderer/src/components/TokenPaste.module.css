@@ -12,7 +12,7 @@
 .copy:hover { color: var(--ink); }
 .copy[data-copied="true"] { color: var(--add-edge); }
 .copy svg { width: 0.85rem; height: 0.85rem; stroke-width: 1.8; }
-.form { display: flex; gap: 0.5rem; width: 100%; }
+.form { display: flex; gap: 0.5rem; width: 100%; margin-bottom: 2rem; }
 .input {
   flex: 1; min-width: 0; padding: 0.38rem 0.9rem; border-radius: 999px;
   border: 1px solid var(--glass-edge); background: var(--panel); color: var(--ink);

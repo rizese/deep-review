@@ -151,6 +151,9 @@ export function Index(): JSX.Element {
   const { prs, ready } = useHeldPrs();
   usePageReady(ready);
   const gap = setupGap(useWatchStatus());
+  // In a browser there is no watcher to wait on, so the terminal is the
+  // only way a PR gets here; in the app it is the other way round.
+  const desktop = typeof window !== "undefined" && Boolean(window.electronAPI);
   // Before there is a token there is nothing to list and one thing to do,
   // so that one thing is the whole page: no tabs, no empty list under it.
   const needsSignIn = gap === "token";
@@ -195,10 +198,19 @@ export function Index(): JSX.Element {
         </div>
         {ready && prs.length === 0 && !gap && (
           <div className={styles.empty}>
-            Nothing loaded yet. Add a PR from any terminal:
-            <div>
-              <code>pr-review https://github.com/owner/repo/pull/123</code>
-            </div>
+            {desktop ? (
+              <>
+                Nothing yet. Deep Review is watching GitHub for the PRs waiting on you; each one appears here as it is built.
+                <div>To read one now, drop its link anywhere in this window, or paste it.</div>
+              </>
+            ) : (
+              <>
+                Nothing loaded yet. Add a PR from any terminal:
+                <div>
+                  <code>pr-review https://github.com/owner/repo/pull/123</code>
+                </div>
+              </>
+            )}
           </div>
         )}
         {ready && prs.length > 0 && shown.length === 0 && tab === "review" && (
