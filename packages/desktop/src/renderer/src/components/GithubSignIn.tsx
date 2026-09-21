@@ -193,7 +193,7 @@ export function GithubSignIn({ api, onChange }: { api: ElectronAPI; onChange?: (
             <code>read:org</code> scopes, and the token is kept encrypted by the OS keychain.
           </div>
           <div className={styles.ways}>
-            <Button variant="primary" disabled={busy || !loaded} onClick={() => void signIn()}>
+            <Button disabled={busy || !loaded} onClick={() => void signIn()}>
               <SiGithub aria-hidden="true" />
               Sign in with GitHub
             </Button>
@@ -233,7 +233,8 @@ export function GithubSignIn({ api, onChange }: { api: ElectronAPI; onChange?: (
                 Save
               </Button>
               <div className={styles.hint}>
-                Signing in with GitHub needs an OAuth App of your own with Device Flow enabled. It has no secret.{" "}
+                Paste a client id to sign in against your own OAuth App rather than the one this build was made with. It needs Device Flow
+                enabled, and has no secret.{" "}
                 <button className={styles.link} type="button" onClick={() => void api.app.openExternal(OAUTH_APPS_URL)}>
                   Register one on GitHub
                 </button>
