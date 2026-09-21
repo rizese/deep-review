@@ -98,7 +98,19 @@ keeps working against it.
 ```sh
 pnpm app          # run it in development, with hot reload for the pages
 pnpm app:build    # build packages/desktop/dist/*.dmg (unsigned)
+pnpm reset        # clear everything and start from a first run
 ```
+
+`pnpm reset` exists because the state lives in two places and clearing one
+without the other leaves them disagreeing: delete the server's PR store on
+its own and the watcher still believes it handed those PRs over, so it
+hands over nothing ever again. It clears `~/.deep-review` (PR pages, the
+watcher's memory, the searches, checkouts, logs) and the app's data
+directory (the encrypted token and model keys, the Dock badge's read marks,
+window state), after saying what it will delete and asking. `--keep-keys`
+leaves you signed in with your model keys, `--dry-run` only says what would
+go, `--yes` skips the question. It refuses to run while the app is up,
+since the app would write its state straight back.
 
 Merges to `main` build an unsigned arm64 release through
 `.github/workflows/release.yml`.
@@ -125,6 +137,7 @@ Run from the repo root:
 | `pnpm test`      | Run all tests (Vitest)                 |
 | `pnpm e2e`       | Compare the pages against their visual baselines (Playwright, Chromium) |
 | `pnpm e2e:update` | Re-take the baselines after a deliberate visual change |
+| `pnpm reset`     | Clear all state and start from a first run (`--keep-keys`, `--dry-run`, `--yes`) |
 
 
 
