@@ -25,6 +25,28 @@ const USER_URL = "https://api.github.com/user";
 /** What the watcher needs: its own PRs, the ones waiting on it, and private repos. */
 export const SCOPES = "repo read:org";
 
+/**
+ * The OAuth App's client id, put here at build time from
+ * `DEEP_REVIEW_GITHUB_CLIENT_ID` (see electron.vite.config.ts). Declared
+ * rather than imported because the bundler replaces the identifier
+ * outright; `typeof` on an identifier that was never defined — under
+ * vitest, say — is "undefined" rather than a crash.
+ */
+declare const __GITHUB_CLIENT_ID__: string | undefined;
+
+function builtInClientId(): string {
+  return typeof __GITHUB_CLIENT_ID__ === "string" ? __GITHUB_CLIENT_ID__ : "";
+}
+
+/**
+ * Which client id to sign in with: the one set in Settings, else the one
+ * the build carries, else none — in which case the Settings field is the
+ * only way and the card says so.
+ */
+export function clientIdOf(stored: string): string {
+  return stored.trim() || builtInClientId().trim();
+}
+
 export type Fetch = typeof globalThis.fetch;
 
 export interface DevicePrompt {

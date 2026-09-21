@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import react from "@vitejs/plugin-react";
 import { defineConfig, externalizeDepsPlugin } from "electron-vite";
-import type { ProxyOptions } from "vite";
+import { loadEnv, type ProxyOptions } from "vite";
 
 /**
  * Three bundles: the main process (which runs the review server and the
@@ -11,6 +11,20 @@ import type { ProxyOptions } from "vite";
  * packaged app has no tsx to run them with.
  */
 const daemon = `http://127.0.0.1:${process.env.DEEP_REVIEW_PORT ?? 7331}`;
+
+/**
+ * The OAuth App that "Sign in with GitHub" authorizes against, baked into
+ * the main bundle at build time.
+ *
+ * A client id is not a secret — the Device Flow has none, and this one is
+ * readable in any shipped binary and in the address bar while signing in.
+ * It is kept out of the repository all the same: published, it lets anyone
+ * raise a consent screen carrying this app's name, and it shares this app's
+ * rate limits and org approvals. So it comes from the environment, or from
+ * a gitignored .env beside this config, and a build without one simply
+ * leaves the field in Settings as the way to supply it.
+ */
+const clientId = process.env.DEEP_REVIEW_GITHUB_CLIENT_ID ?? loadEnv("", __dirname, "DEEP_REVIEW_").DEEP_REVIEW_GITHUB_CLIENT_ID ?? "";
 
 // In development the pages come from Vite for hot reload and reach the
 // server main started through this proxy, so they stay same-origin; the
@@ -29,6 +43,7 @@ const proxy: Record<string, ProxyOptions> = Object.fromEntries(
 
 export default defineConfig({
   main: {
+    define: { __GITHUB_CLIENT_ID__: JSON.stringify(clientId) },
     plugins: [externalizeDepsPlugin({ exclude: ["@deep-review/review", "@deep-review/call-graph", "@deep-review/pr", "@deep-review/slicer"] })],
     build: {
       lib: { entry: { index: "./src/main.ts", buildWorker: "./src/buildWorker.ts" } },

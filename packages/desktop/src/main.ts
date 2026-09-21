@@ -11,7 +11,7 @@ import { agentInstalled, uninstallAgent } from "@deep-review/review/launchAgent"
 import type { PrView } from "@deep-review/review/api";
 import type { NavServer } from "@deep-review/review/daemon";
 import { startBadge, type Badge } from "./main/badge.js";
-import { cliToken, identityOf, needsRefresh, refreshGrant, startDeviceFlow, waitForToken, type TokenGrant } from "./main/githubAuth.js";
+import { cliToken, clientIdOf, identityOf, needsRefresh, refreshGrant, startDeviceFlow, waitForToken, type TokenGrant } from "./main/githubAuth.js";
 import { applyToEnvironment, readSettings, writeSettings } from "./main/settings.js";
 import { hasGithubToken, startWatchLoop, type WatchLoop } from "./main/watch.js";
 import type { DevicePrompt, GithubIdentity, Result, SearchConfig, SearchPreview, Settings, WatchStatus } from "./types/electronAPI.js";
@@ -207,9 +207,10 @@ async function storeToken(grant: TokenGrant): Promise<GithubIdentity> {
 async function ensureFreshToken(): Promise<void> {
   const settings = await readSettings();
   const expiresAt = settings.githubTokenExpiresAt || null;
-  if (!needsRefresh(expiresAt) || !settings.githubRefreshToken || !settings.githubClientId) return;
+  const clientId = clientIdOf(settings.githubClientId);
+  if (!needsRefresh(expiresAt) || !settings.githubRefreshToken || !clientId) return;
   try {
-    const grant = await refreshGrant(settings.githubClientId, settings.githubRefreshToken);
+    const grant = await refreshGrant(clientId, settings.githubRefreshToken);
     const next = {
       ...settings,
       githubToken: grant.token,
@@ -242,8 +243,13 @@ function registerAuthIpc(): void {
   });
   ipcMain.handle("auth:sign-in", async (): Promise<Result<DevicePrompt>> => {
     try {
-      const { githubClientId } = await readSettings();
-      if (!githubClientId) throw new Error("no OAuth client id is set; register an OAuth App with Device Flow enabled and paste its client id");
+      const githubClientId = clientIdOf((await readSettings()).githubClientId);
+      if (!githubClientId) {
+        throw new Error(
+          "this build carries no OAuth client id. Register an OAuth App with Device Flow enabled and paste its client id below, " +
+            "or sign in with the GitHub CLI's token instead.",
+        );
+      }
       signingIn?.abort();
       const start = await startDeviceFlow(githubClientId);
       const controller = new AbortController();
