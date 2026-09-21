@@ -20,13 +20,12 @@ export const DEFAULT_SETTINGS: Settings = {
   grokApiKey: "",
   linearApiKey: "",
   model: "",
-  githubClientId: "",
   githubRefreshToken: "",
   githubTokenExpiresAt: 0,
   openAtLogin: false,
 };
 
-const ENV_KEYS: Record<keyof Omit<Settings, "openAtLogin" | "model" | "githubClientId" | "githubRefreshToken" | "githubTokenExpiresAt">, string> = {
+const ENV_KEYS: Record<keyof Omit<Settings, "openAtLogin" | "model" | "githubRefreshToken" | "githubTokenExpiresAt">, string> = {
   githubToken: "GITHUB_TOKEN",
   openaiApiKey: "OPENAI_API_KEY",
   anthropicApiKey: "ANTHROPIC_API_KEY",

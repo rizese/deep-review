@@ -14,12 +14,6 @@ export interface Settings {
   /** Model id for slicing; empty means the CLI's default. */
   model: string;
   /**
-   * The client id of the OAuth App that signing in with GitHub uses. Public
-   * by design — the Device Flow has no secret — but one per installation,
-   * so it is kept here rather than baked into the build.
-   */
-  githubClientId: string;
-  /**
    * Traded for a new token when the current one expires. Only apps
    * registered with "Expire user access tokens" ever issue one.
    */

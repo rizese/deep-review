@@ -26,7 +26,6 @@ const EMPTY: SettingsValues = {
   grokApiKey: "",
   linearApiKey: "",
   model: "",
-  githubClientId: "",
   githubRefreshToken: "",
   githubTokenExpiresAt: 0,
   openAtLogin: false,
@@ -86,7 +85,6 @@ function Keys({ api }: { api: ElectronAPI }): JSX.Element {
         current.success && current.data
           ? {
               githubToken: current.data.githubToken,
-              githubClientId: current.data.githubClientId,
               githubRefreshToken: current.data.githubRefreshToken,
               githubTokenExpiresAt: current.data.githubTokenExpiresAt,
             }
@@ -277,7 +275,7 @@ export function Settings(): JSX.Element {
       <main className={styles.page}>
         {api ? (
           <>
-            <GithubSignIn api={api} />
+            <GithubSignIn />
             <Searches api={api} />
             <CheckNow api={api} />
             <Keys api={api} />

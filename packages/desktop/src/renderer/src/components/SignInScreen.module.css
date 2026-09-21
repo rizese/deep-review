@@ -10,5 +10,3 @@
 .scopes code { font-family: var(--mono); font-size: 0.9em; }
 .note { font-size: 0.85rem; color: var(--add-edge); max-width: 34rem; }
 .note[data-bad="true"] { color: var(--del-edge); }
-.settings { border: 0; padding: 0; background: none; font: inherit; font-size: 0.78rem; color: var(--ink-faint); cursor: pointer; }
-.settings:hover { color: var(--ink); text-decoration: underline; }

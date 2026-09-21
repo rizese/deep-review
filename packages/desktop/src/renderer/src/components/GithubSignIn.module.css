@@ -18,20 +18,3 @@
 .note { font-size: 0.8rem; color: var(--add-edge); margin-top: 0.7rem; }
 .note[data-bad="true"] { color: var(--del-edge); }
 
-.more { margin-top: 0.9rem; }
-.more > summary { cursor: pointer; color: var(--ink-faint); font-size: 0.78rem; list-style: none; }
-.more > summary::-webkit-details-marker { display: none; }
-.more > summary::before { content: "▸ "; }
-.more[open] > summary::before { content: "▾ "; }
-.more > summary:hover { color: var(--ink); }
-.moreBody { display: flex; flex-direction: column; gap: 0.9rem; margin-top: 0.8rem; }
-.field { display: grid; grid-template-columns: 9.5rem minmax(0, 1fr) auto; gap: 0.35rem 0.85rem; align-items: center; }
-.fieldLabel { color: var(--ink-soft); font-size: 0.85rem; }
-.input {
-  min-width: 0; padding: 0.3rem 0.7rem; border-radius: 999px;
-  border: 1px solid var(--glass-edge); background: var(--panel); color: var(--ink); font-size: 0.82rem; font-family: var(--mono);
-}
-.input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
-.hint { grid-column: 2 / span 2; color: var(--ink-faint); font-size: 0.75rem; }
-.link { border: 0; padding: 0; background: none; font: inherit; color: var(--accent); cursor: pointer; }
-.link:hover { text-decoration: underline; }

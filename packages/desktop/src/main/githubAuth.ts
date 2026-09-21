@@ -38,13 +38,9 @@ function builtInClientId(): string {
   return typeof __GITHUB_CLIENT_ID__ === "string" ? __GITHUB_CLIENT_ID__ : "";
 }
 
-/**
- * Which client id to sign in with: the one set in Settings, else the one
- * the build carries, else none — in which case the Settings field is the
- * only way and the card says so.
- */
-export function clientIdOf(stored: string): string {
-  return stored.trim() || builtInClientId().trim();
+/** The client id to sign in with; empty in a build made without one. */
+export function clientIdOf(): string {
+  return builtInClientId().trim();
 }
 
 export type Fetch = typeof globalThis.fetch;

@@ -1,6 +1,5 @@
 import { SiGithub } from "@icons-pack/react-simple-icons";
 import type { JSX } from "react";
-import { go } from "../lib/route.js";
 import { useGithubAuth } from "../lib/useGithubAuth.js";
 import { Button } from "./Button.js";
 import { DeviceCode } from "./DeviceCode.js";
@@ -51,9 +50,6 @@ export function SignInScreen(): JSX.Element {
           {auth.note.text}
         </div>
       )}
-      <button className={styles.settings} type="button" onClick={() => go("/settings")}>
-        Other ways in
-      </button>
     </main>
   );
 }

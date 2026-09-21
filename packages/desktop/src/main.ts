@@ -207,7 +207,7 @@ async function storeToken(grant: TokenGrant): Promise<GithubIdentity> {
 async function ensureFreshToken(): Promise<void> {
   const settings = await readSettings();
   const expiresAt = settings.githubTokenExpiresAt || null;
-  const clientId = clientIdOf(settings.githubClientId);
+  const clientId = clientIdOf();
   if (!needsRefresh(expiresAt) || !settings.githubRefreshToken || !clientId) return;
   try {
     const grant = await refreshGrant(clientId, settings.githubRefreshToken);
@@ -243,11 +243,11 @@ function registerAuthIpc(): void {
   });
   ipcMain.handle("auth:sign-in", async (): Promise<Result<DevicePrompt>> => {
     try {
-      const githubClientId = clientIdOf((await readSettings()).githubClientId);
+      const githubClientId = clientIdOf();
       if (!githubClientId) {
         throw new Error(
-          "this build carries no OAuth client id. Register an OAuth App with Device Flow enabled and paste its client id below, " +
-            "or sign in with the GitHub CLI's token instead.",
+          "this build carries no OAuth client id: it was built without DEEP_REVIEW_GITHUB_CLIENT_ID. " +
+            "Sign in with the GitHub CLI's token instead, or rebuild with one (see .env.example).",
         );
       }
       signingIn?.abort();
