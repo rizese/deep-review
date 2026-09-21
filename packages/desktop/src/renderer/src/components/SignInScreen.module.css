@@ -1,0 +1,14 @@
+/* Before there is a token there is nothing to show and one thing to do,
+   so the whole page is that one thing: centred, no tabs, no list. */
+.screen { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.1rem; padding: 0 1.5rem 6vh; text-align: center; }
+.mark { display: inline-flex; color: var(--ink); opacity: 0.9; }
+.mark svg { width: 2.6rem; height: 2.6rem; }
+.title { font-size: 1.5rem; font-weight: 600; letter-spacing: -0.02em; margin: 0; }
+.blurb { color: var(--ink-soft); font-size: 0.92rem; max-width: 30rem; margin: 0; line-height: 1.55; }
+.ways { display: flex; align-items: center; justify-content: center; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.3rem; }
+.scopes { color: var(--ink-faint); font-size: 0.78rem; max-width: 30rem; margin: 0; }
+.scopes code { font-family: var(--mono); font-size: 0.9em; }
+.note { font-size: 0.85rem; color: var(--add-edge); max-width: 34rem; }
+.note[data-bad="true"] { color: var(--del-edge); }
+.settings { border: 0; padding: 0; background: none; font: inherit; font-size: 0.78rem; color: var(--ink-faint); cursor: pointer; }
+.settings:hover { color: var(--ink); text-decoration: underline; }

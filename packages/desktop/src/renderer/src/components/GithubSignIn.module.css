@@ -15,16 +15,6 @@
 .blurb { color: var(--ink-soft); font-size: 0.85rem; margin-bottom: 0.8rem; max-width: 46rem; }
 .blurb code { font-family: var(--mono); font-size: 0.85em; color: var(--ink); }
 
-/* The device code: the one thing the reader carries to the browser, so it
-   is the largest thing on the card while it is live. */
-.device { display: flex; align-items: center; gap: 0.9rem; flex-wrap: wrap; padding: 0.85rem 1rem; border: 1px solid var(--accent); border-radius: 8px; background: var(--accent-soft); }
-.code { font-family: var(--mono); font-size: 1.5rem; font-weight: 600; letter-spacing: 0.18em; color: var(--ink); user-select: all; }
-.deviceText { color: var(--ink-soft); font-size: 0.82rem; max-width: 22rem; }
-.waiting { display: inline-flex; align-items: center; gap: 0.4rem; color: var(--accent); font-size: 0.8rem; font-weight: 600; }
-.pulse { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: currentColor; animation: pulse 1.4s ease-in-out infinite; }
-@keyframes pulse { 0%, 100% { opacity: 0.25; transform: scale(0.85); } 50% { opacity: 1; transform: scale(1); } }
-@media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
-
 .note { font-size: 0.8rem; color: var(--add-edge); margin-top: 0.7rem; }
 .note[data-bad="true"] { color: var(--del-edge); }
 

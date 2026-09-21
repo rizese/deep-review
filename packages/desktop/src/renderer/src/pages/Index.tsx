@@ -3,6 +3,7 @@ import { SiGithub } from "@icons-pack/react-simple-icons";
 import { Trash2 } from "lucide-react";
 import type { MouseEvent } from "react";
 import { Button } from "../components/Button.js";
+import { SignInScreen } from "../components/SignInScreen.js";
 import { SizeBar } from "../components/SizeBar.js";
 import { addPr, forgetPr, parseKey, type PrView } from "../lib/api.js";
 import { usePageReady } from "../components/PageFade.js";
@@ -125,26 +126,22 @@ function Card({ pr, hidden }: { pr: PrView; hidden: boolean }): JSX.Element {
 }
 
 /**
- * What the desktop app shows before the watcher can work: no token, or no
- * repo to watch. Either way the way forward is Settings, and a PR link can
- * be dropped or pasted in the meantime.
+ * Signed in, but every search was refused — a file someone wrote by hand
+ * and got wrong. The list still shows whatever the server holds.
  */
-function Setup({ gap, held }: { gap: "token" | "searches"; held: number }): JSX.Element {
-  const meantime = held > 0 ? "The PRs below are what the server already holds; the list will not change until it can look." : "Or drop a PR link anywhere in this window, or paste one.";
+function BadSearches({ held }: { held: number }): JSX.Element {
   return (
     <section className={styles.setup} aria-label="Set up">
       <div>
-        <div className={styles.setupTitle}>{gap === "token" ? "Sign in to GitHub to start watching" : "Nothing is being searched for"}</div>
+        <div className={styles.setupTitle}>Nothing is being searched for</div>
         <div className={styles.setupBody}>
-          {gap === "token"
-            ? "Deep Review looks for the PRs waiting on your review and builds a reading of each one. It needs your GitHub account to look."
-            : "You are signed in, but every search was refused. A search has to name somebody or somewhere."}{" "}
-          {meantime}
+          Every search was refused; a search has to name somebody or somewhere.{" "}
+          {held > 0
+            ? "The PRs below are what the server already holds; the list will not change until one search works."
+            : "Drop a PR link anywhere in this window in the meantime, or paste one."}
         </div>
       </div>
-      <Button variant="primary" onClick={() => go("/settings")}>
-        {gap === "token" ? "Sign in with GitHub" : "Fix the searches"}
-      </Button>
+      <Button onClick={() => go("/settings")}>Fix the searches</Button>
     </section>
   );
 }
@@ -154,6 +151,9 @@ export function Index(): JSX.Element {
   const { prs, ready } = useHeldPrs();
   usePageReady(ready);
   const gap = setupGap(useWatchStatus());
+  // Before there is a token there is nothing to list and one thing to do,
+  // so that one thing is the whole page: no tabs, no empty list under it.
+  const needsSignIn = gap === "token";
   const [tabStored, setTab] = useStored("deep-review.tab", "review");
   const tab = tabStored === "authored" ? "authored" : "review";
   const [hideStored, setHide] = useStored("deep-review.hideApproved", "false");
@@ -169,10 +169,12 @@ export function Index(): JSX.Element {
   const shown = onTab.filter(isShown);
   const hidden = onTab.length - shown.length;
 
+  if (needsSignIn) return <SignInScreen />;
+
   return (
     <>
       <main className={styles.page}>
-        {ready && gap && <Setup gap={gap} held={prs.length} />}
+        {ready && gap === "searches" && <BadSearches held={prs.length} />}
         <div className={styles.toolbar}>
           <div className={styles.tabs} role="tablist">
             <button className={styles.tab} type="button" role="tab" aria-selected={tab === "review"} onClick={() => setTab("review")}>
