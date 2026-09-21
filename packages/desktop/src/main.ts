@@ -293,9 +293,6 @@ function registerAuthIpc(): void {
       const settings = await readSettings();
       const next = { ...settings, githubToken: "", githubRefreshToken: "", githubTokenExpiresAt: 0 };
       await writeSettings(next);
-      // The environment keeps a deleted key only if the process was started
-      // with one; applyToEnvironment leaves that alone, so clear it here.
-      delete process.env.GITHUB_TOKEN;
       applyToEnvironment(next);
       watchLoop?.refresh();
       tellIdentity(null);
@@ -314,9 +311,12 @@ function registerIpc(): void {
       return failed(error);
     }
   });
-  ipcMain.handle("settings:set", async (_event, settings: Settings): Promise<Result> => {
+  ipcMain.handle("settings:set", async (_event, patch: Partial<Settings>): Promise<Result> => {
     try {
       const hadToken = hasGithubToken();
+      // Merged, not replaced: a page that owns four fields should not have
+      // to know, or resend, the ones main wrote while it was open.
+      const settings = { ...(await readSettings()), ...patch };
       await writeSettings(settings);
       applyToEnvironment(settings);
       app.setLoginItemSettings({ openAtLogin: settings.openAtLogin });

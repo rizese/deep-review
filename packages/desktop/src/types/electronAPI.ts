@@ -83,7 +83,8 @@ export interface Result<T = void> {
 
 export interface SettingsAPI {
   get: () => Promise<Result<Settings>>;
-  set: (settings: Settings) => Promise<Result>;
+  /** Merged into what is stored, so a page need only send the fields it owns. */
+  set: (settings: Partial<Settings>) => Promise<Result>;
 }
 
 export interface WatchAPI {

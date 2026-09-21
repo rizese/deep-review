@@ -84,18 +84,13 @@ function Keys({ api }: { api: ElectronAPI }): JSX.Element {
     setBusy(true);
     setNote(null);
     try {
-      // Signing in writes the GitHub token from another card while this form
-      // is open; read the settings back so saving here cannot undo that.
-      const current = await api.settings.get();
-      const keep =
-        current.success && current.data
-          ? {
-              githubToken: current.data.githubToken,
-              githubRefreshToken: current.data.githubRefreshToken,
-              githubTokenExpiresAt: current.data.githubTokenExpiresAt,
-            }
-          : {};
-      const result = await api.settings.set({ ...values, ...keep });
+      // Only what this form owns. Settings are merged, so the token another
+      // card wrote while this one was open survives without being resent.
+      const result = await api.settings.set({
+        ...Object.fromEntries(KEY_FIELDS.map((f) => [f.id, values[f.id]])),
+        model: values.model,
+        openAtLogin: values.openAtLogin,
+      });
       setNote(result.success ? { text: "saved", bad: false } : { text: result.error ?? "could not save", bad: true });
     } catch (error) {
       setNote({ text: reason(error, "could not save"), bad: true });

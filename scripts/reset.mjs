@@ -20,7 +20,7 @@
  */
 
 import { createInterface } from "node:readline/promises";
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -56,28 +56,7 @@ function safeToRemove(target) {
   const resolved = path.resolve(target);
   if (resolved === path.resolve(HOME) || resolved === path.parse(resolved).root) return false;
   if (!resolved.startsWith(`${path.resolve(HOME)}${path.sep}`) && !resolved.startsWith(path.resolve(os.tmpdir()))) return false;
-  return /(^|[\\/\\\\])(\.deep-review|@deep-review)([\\/\\\\]|$)/.test(resolved) || resolved.includes("deep-review");
-}
-
-function size(target) {
-  let bytes = 0;
-  const walk = (p) => {
-    const stat = statSync(p, { throwIfNoEntry: false });
-    if (!stat) return;
-    if (!stat.isDirectory()) {
-      bytes += stat.size;
-      return;
-    }
-    for (const entry of readdirSync(p)) walk(path.join(p, entry));
-  };
-  walk(target);
-  return bytes;
-}
-
-function human(bytes) {
-  if (bytes > 1024 * 1024) return `${Math.round(bytes / (1024 * 1024))} MB`;
-  if (bytes > 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${bytes} B`;
+  return resolved.includes("deep-review");
 }
 
 /** The server answering means the app is up, and it would write its state back over ours. */
@@ -117,7 +96,7 @@ if (!dryRun && (await serverRunning())) {
 }
 
 console.log(keepKeys ? "Clearing everything but your keys:\n" : "Clearing everything:\n");
-for (const target of targets) console.log(`  ${target.path}  (${human(size(target.path))})\n    ${target.what}`);
+for (const target of targets) console.log(`  ${target.path}\n    ${target.what}`);
 console.log();
 
 if (dryRun) {
@@ -154,4 +133,4 @@ if (keptSettings) {
   console.log(`kept    ${settingsFile}`);
 }
 
-console.log(`\nDone. Start again with: pnpm app`);
+console.log(`\nDone. Start again with: pnpm dev`);

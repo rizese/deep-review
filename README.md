@@ -96,8 +96,8 @@ CLI's daemon and the launchd watcher when it starts, and the `pr-review` CLI
 keeps working against it.
 
 ```sh
-pnpm app          # run it in development, with hot reload for the pages
-pnpm app:build    # build packages/desktop/dist/*.dmg (unsigned)
+pnpm dev          # run it in development, with hot reload for the pages
+pnpm build:mac    # build packages/desktop/dist/*.dmg (unsigned)
 pnpm reset        # clear everything and start from a first run
 ```
 

@@ -13,7 +13,7 @@
  * without reaching GitHub.
  */
 
-import type { DevicePrompt } from "../types/electronAPI.js";
+import type { DevicePrompt, GithubIdentity } from "../types/electronAPI.js";
 
 const DEVICE_CODE_URL = "https://github.com/login/device/code";
 const TOKEN_URL = "https://github.com/login/oauth/access_token";
@@ -42,14 +42,6 @@ export function clientIdOf(): string {
 
 export type Fetch = typeof globalThis.fetch;
 
-
-export interface GithubIdentity {
-  login: string;
-  name: string | null;
-  avatarUrl: string;
-  /** What the token may do, as GitHub reports it; empty when it does not say. */
-  scopes: string[];
-}
 
 interface DeviceCodeBody {
   device_code?: string;

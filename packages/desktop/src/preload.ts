@@ -16,7 +16,7 @@ const auth: AuthAPI = {
 
 const settings: SettingsAPI = {
   get: () => ipcRenderer.invoke("settings:get"),
-  set: (value: Settings) => ipcRenderer.invoke("settings:set", value),
+  set: (value: Partial<Settings>) => ipcRenderer.invoke("settings:set", value),
 };
 
 const watch: WatchAPI = {

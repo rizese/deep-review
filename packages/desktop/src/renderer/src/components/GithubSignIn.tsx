@@ -1,9 +1,8 @@
 import { SiGithub } from "@icons-pack/react-simple-icons";
-import { useState, type JSX } from "react";
+import type { JSX } from "react";
 import { useGithubAuth } from "../lib/useGithubAuth.js";
 import { Button } from "./Button.js";
-import { DeviceCode } from "./DeviceCode.js";
-import { TokenPaste } from "./TokenPaste.js";
+import { SignInWays } from "./SignInWays.js";
 import styles from "./GithubSignIn.module.css";
 
 /**
@@ -12,7 +11,6 @@ import styles from "./GithubSignIn.module.css";
  */
 export function GithubSignIn(): JSX.Element {
   const auth = useGithubAuth();
-  const [pasting, setPasting] = useState(false);
   const note = auth.note;
   const busy = auth.busy;
 
@@ -37,27 +35,17 @@ export function GithubSignIn(): JSX.Element {
             Sign out
           </Button>
         </div>
-      ) : auth.device ? (
-        <DeviceCode prompt={auth.device} onCancel={() => void auth.cancel()} />
-      ) : pasting ? (
-        <TokenPaste onSubmit={auth.signInWithToken} onBack={() => setPasting(false)} busy={busy} inCard />
       ) : (
-        <>
-          <div className={styles.blurb}>
-            Deep Review reads the PRs waiting on you and their diffs. Signing in with GitHub asks for the <code>repo</code> and{" "}
-            <code>read:org</code> scopes, and the token is kept encrypted by the OS keychain.
-          </div>
-          <div className={styles.ways}>
-            <Button disabled={busy || !auth.loaded} onClick={() => void auth.signIn()}>
-              <SiGithub aria-hidden="true" />
-              Sign in with GitHub
-            </Button>
-            <Button disabled={busy} onClick={() => setPasting(true)} title="Paste the token the GitHub CLI is signed in with">
-              <SiGithub aria-hidden="true" />
-              Use the GitHub CLI token
-            </Button>
-          </div>
-        </>
+        <SignInWays
+          auth={auth}
+          rowClassName={styles.ways}
+          before={
+            <div className={styles.blurb}>
+              Deep Review reads the PRs waiting on you and their diffs. Signing in with GitHub asks for the <code>repo</code> and{" "}
+              <code>read:org</code> scopes, and the token is kept encrypted by the OS keychain.
+            </div>
+          }
+        />
       )}
       {note && (
         <div className={styles.note} data-bad={note.bad ? "true" : "false"}>

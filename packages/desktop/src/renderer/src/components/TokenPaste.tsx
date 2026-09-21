@@ -1,7 +1,6 @@
-import { Check, Copy } from "lucide-react";
 import { useState, type FormEvent, type JSX } from "react";
-import { toClipboard } from "../lib/clipboard.js";
 import { Button } from "./Button.js";
+import { CopyButton } from "./CopyButton.js";
 import styles from "./TokenPaste.module.css";
 
 const COMMAND = "gh auth token";
@@ -26,13 +25,6 @@ export function TokenPaste({
   inCard?: boolean;
 }): JSX.Element {
   const [token, setToken] = useState("");
-  const [copied, setCopied] = useState(false);
-
-  const copy = async (): Promise<void> => {
-    if (!(await toClipboard(COMMAND))) return;
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
 
   const submit = async (e: FormEvent): Promise<void> => {
     e.preventDefault();
@@ -47,19 +39,7 @@ export function TokenPaste({
         Run{" "}
         <span className={styles.cmd}>
           {COMMAND}
-          <button
-            className={styles.copy}
-            type="button"
-            aria-label={copied ? "Copied" : "Copy the command"}
-            data-copied={copied ? "true" : "false"}
-            onClick={() => void copy()}
-          >
-            {copied ? (
-              <Check aria-hidden="true" />
-            ) : (
-              <Copy aria-hidden="true" />
-            )}
-          </button>
+          <CopyButton text={COMMAND} label="Copy the command" className={styles.copy} />
         </span>{" "}
         in a terminal and paste what it prints.
       </p>

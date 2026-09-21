@@ -10,7 +10,13 @@ import type { PrView } from "@deep-review/review/api";
 /** PR key → the head commit it was last opened at ("" when the build had none). */
 export type Seen = Record<string, string>;
 
-export function isUnread(pr: PrView, seen: Seen): boolean {
+/**
+ * The little of a PR the count depends on. Naming it keeps the caller free
+ * to hold this much and no more, rather than a whole view per PR.
+ */
+export type Countable = Pick<PrView, "key" | "state" | "role" | "approved" | "headSha">;
+
+export function isUnread(pr: Countable, seen: Seen): boolean {
   if (pr.state !== "ready" || pr.role === "authored" || pr.approved) return false;
   return seen[pr.key] !== (pr.headSha ?? "");
 }

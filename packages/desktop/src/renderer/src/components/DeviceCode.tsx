@@ -1,8 +1,7 @@
-import { Check, Copy } from "lucide-react";
-import { useEffect, useRef, useState, type JSX, type MouseEvent } from "react";
+import { useRef, type JSX, type MouseEvent } from "react";
 import type { DevicePrompt } from "../../../types/electronAPI.js";
-import { toClipboard } from "../lib/clipboard.js";
 import { Button } from "./Button.js";
+import { CopyButton } from "./CopyButton.js";
 import styles from "./DeviceCode.module.css";
 
 /**
@@ -18,31 +17,16 @@ export function DeviceCode({
   onCancel,
 }: {
   prompt: DevicePrompt;
-  wide?: boolean;
+  wide?: boolean | undefined;
   onCancel: () => void;
 }): JSX.Element {
-  const [copied, setCopied] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(
-    () => () => {
-      if (timer.current) clearTimeout(timer.current);
-    },
-    [],
-  );
-
-  const copy = async (): Promise<void> => {
-    const ok = await toClipboard(prompt.userCode);
-    if (!ok) return;
-    setCopied(true);
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setCopied(false), 2000);
-  };
-
-  // Anywhere on the box copies; its own buttons keep their meaning.
+  const copy = useRef<HTMLButtonElement>(null);
+  // Anywhere on the box copies, by standing in for the copy button so the
+  // two share one implementation and one "copied" moment; the box's own
+  // buttons keep their meaning.
   const onBoxClick = (e: MouseEvent): void => {
     if ((e.target as Element).closest("button")) return;
-    void copy();
+    copy.current?.click();
   };
 
   return (
@@ -52,15 +36,7 @@ export function DeviceCode({
       title="Click to copy the code"
       onClick={onBoxClick}
     >
-      <button
-        className={styles.copy}
-        type="button"
-        aria-label={copied ? "Copied" : "Copy the code"}
-        data-copied={copied ? "true" : "false"}
-        onClick={() => void copy()}
-      >
-        {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
-      </button>
+      <CopyButton ref={copy} text={prompt.userCode} label="Copy the code" className={styles.copy} />
       <div className={styles.codeRow}>
         <span className={styles.code}>{prompt.userCode}</span>
       </div>

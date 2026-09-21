@@ -61,11 +61,24 @@ export async function writeSettings(settings: Settings): Promise<void> {
  * exported) wins over an empty setting, but a stored value replaces an
  * environment one — the settings page is where the app's keys are chosen.
  */
+/**
+ * Environment names this process set from a setting, so emptying that
+ * setting can take the value back out again. A name absent from here was
+ * exported by whoever launched the app, and stays theirs.
+ */
+const applied = new Set<string>();
+
 export function applyToEnvironment(settings: Settings): void {
   for (const [key, envName] of Object.entries(ENV_KEYS) as [keyof typeof ENV_KEYS, string][]) {
     const value = settings[key];
-    if (value) process.env[envName] = value;
-    else if (process.env[envName] === undefined) delete process.env[envName];
+    if (value) {
+      process.env[envName] = value;
+      applied.add(envName);
+    } else if (applied.has(envName)) {
+      // We put it there, and the setting it came from is now empty.
+      delete process.env[envName];
+      applied.delete(envName);
+    }
   }
   if (settings.model) process.env.DEEP_REVIEW_MODEL = settings.model;
   else delete process.env.DEEP_REVIEW_MODEL;

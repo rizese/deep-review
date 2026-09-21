@@ -28,14 +28,6 @@
 .ok { color: var(--add-edge); }
 .bad { color: var(--del-edge); }
 
-.repos { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 0.8rem; }
-.repo { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.45rem 0.65rem; border: 1px solid var(--line-c); border-radius: 6px; background: var(--panel-2); }
-.repoName { font-family: var(--mono); font-size: 0.85rem; color: var(--ink); }
-.query { font-family: var(--mono); font-size: 0.72rem; color: var(--ink-faint); margin-top: 0.2rem; word-break: break-word; }
-.none { color: var(--ink-faint); font-size: 0.85rem; margin-bottom: 0.8rem; }
-.add { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
-.add .input { flex: 0 1 18rem; }
-
 .about { display: grid; grid-template-columns: 9.5rem minmax(0, 1fr); gap: 0.45rem 0.85rem; align-items: baseline; }
 .aboutKey { color: var(--ink-soft); font-size: 0.85rem; }
 .aboutValue { font-family: var(--mono); font-size: 0.78rem; color: var(--ink); overflow-wrap: anywhere; }
