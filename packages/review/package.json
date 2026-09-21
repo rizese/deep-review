@@ -15,7 +15,8 @@
   "dependencies": {
     "@deep-review/call-graph": "workspace:*",
     "@deep-review/pr": "workspace:*",
-    "@deep-review/slicer": "workspace:*"
+    "@deep-review/slicer": "workspace:*",
+    "ai": "^7.0.107"
   },
   "exports": {
     "./api": "./src/api.ts",

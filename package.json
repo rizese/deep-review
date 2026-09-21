@@ -13,9 +13,9 @@
     "test": "pnpm -r test",
     "e2e": "playwright test",
     "e2e:update": "playwright test --update-snapshots",
-    "app": "pnpm --filter @deep-review/desktop dev",
+    "dev": "pnpm --filter @deep-review/desktop dev",
     "reset": "node scripts/reset.mjs",
-    "app:build": "pnpm --filter @deep-review/desktop build:mac"
+    "build:mac": "pnpm --filter @deep-review/desktop build:mac"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

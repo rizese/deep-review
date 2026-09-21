@@ -6,7 +6,7 @@ import { Searches } from "../components/Searches.js";
 import styles from "./Settings.module.css";
 
 interface KeyField {
-  id: "openaiApiKey" | "anthropicApiKey" | "grokApiKey" | "linearApiKey";
+  id: "openaiApiKey" | "anthropicApiKey" | "grokApiKey" | "openrouterApiKey" | "linearApiKey";
   label: string;
   hint: string;
 }
@@ -16,6 +16,11 @@ const KEY_FIELDS: KeyField[] = [
   { id: "openaiApiKey", label: "OpenAI key", hint: "For slicing with an OpenAI model." },
   { id: "anthropicApiKey", label: "Anthropic key", hint: "For slicing with a Claude model." },
   { id: "grokApiKey", label: "Grok key", hint: "For slicing with a Grok model." },
+  {
+    id: "openrouterApiKey",
+    label: "OpenRouter key",
+    hint: "For slicing through OpenRouter: set the model to openrouter/<its model id>.",
+  },
   { id: "linearApiKey", label: "Linear key", hint: "Reads the issue a PR names, when it names one." },
 ];
 
@@ -24,6 +29,7 @@ const EMPTY: SettingsValues = {
   openaiApiKey: "",
   anthropicApiKey: "",
   grokApiKey: "",
+  openrouterApiKey: "",
   linearApiKey: "",
   model: "",
   githubRefreshToken: "",

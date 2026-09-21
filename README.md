@@ -139,6 +139,20 @@ Run from the repo root:
 | `pnpm e2e:update` | Re-take the baselines after a deliberate visual change |
 | `pnpm reset`     | Clear all state and start from a first run (`--keep-keys`, `--dry-run`, `--yes`) |
 
+### Which model does the slicing
+
+The model id picks the provider: `gpt-*` goes to OpenAI, `grok-*` to xAI,
+anything else to Anthropic, and anything prefixed `openrouter/` through
+OpenRouter — `openrouter/anthropic/claude-sonnet-4.5`, say, where what
+follows the prefix is OpenRouter's own model id, passed along untouched.
+That last one is the provider-agnostic route: one key, any model OpenRouter
+carries, including ones this repo has never heard of. Set it with `--model`,
+`DEEP_REVIEW_MODEL`, or the Model field in the app's settings, and give it
+the matching key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `XAI_API_KEY` or
+`GROK_API_KEY`, `OPENROUTER_API_KEY`). OpenRouter is reached over its
+OpenAI-compatible chat API rather than OpenAI's Responses API, which it does
+not implement.
+
 
 
 

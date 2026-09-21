@@ -10,6 +10,7 @@ export interface Settings {
   openaiApiKey: string;
   anthropicApiKey: string;
   grokApiKey: string;
+  openrouterApiKey: string;
   linearApiKey: string;
   /** Model id for slicing; empty means the CLI's default. */
   model: string;

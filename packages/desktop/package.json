@@ -16,8 +16,9 @@
     "build:mac": "electron-vite build && electron-builder --mac"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^4.0.39",
-    "@ai-sdk/openai": "^4.0.45",
+    "@ai-sdk/anthropic": "^4.0.58",
+    "@ai-sdk/openai": "^4.0.71",
+    "@ai-sdk/openai-compatible": "^3.0.53",
     "@ai-sdk/xai": "^4.0.42",
     "@deep-review/call-graph": "workspace:*",
     "@deep-review/pr": "workspace:*",
@@ -26,7 +27,7 @@
     "@electron-toolkit/preload": "^3.0.1",
     "@electron-toolkit/utils": "^3.0.0",
     "@icons-pack/react-simple-icons": "^13.15.1",
-    "ai": "^7.0.69",
+    "ai": "^7.0.107",
     "diff": "^8.0.4",
     "lucide-react": "^1.46.0",
     "pyright": "^1.1.390",
