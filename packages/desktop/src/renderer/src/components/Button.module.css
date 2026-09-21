@@ -30,7 +30,7 @@
 .button:active:not(:disabled) { transform: translateY(0) scale(0.98); box-shadow: inset 0 1px 0 var(--glass-edge), 0 2px 8px var(--glass-shadow); }
 .button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .button:disabled { opacity: 0.55; cursor: default; }
-.button svg { width: 1em; height: 1em; }
+.button svg { width: 1.05em; height: 1.05em; flex: none; }
 @keyframes sheen {
   from { transform: translateX(-160%) skewX(-18deg); }
   to { transform: translateX(380%) skewX(-18deg); }

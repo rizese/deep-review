@@ -71,6 +71,9 @@ importers:
       '@electron-toolkit/utils':
         specifier: ^3.0.0
         version: 3.0.0(electron@31.7.5)
+      '@icons-pack/react-simple-icons':
+        specifier: ^13.15.1
+        version: 13.15.1(react@19.3.0)
       ai:
         specifier: ^7.0.69
         version: 7.0.69(zod@3.25.76)
@@ -936,6 +939,11 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@icons-pack/react-simple-icons@13.15.1':
+    resolution: {integrity: sha512-S35E7vJlJzMeoqjwwI7ZmQUJ2W+2KspnB6bc49KdoDGwp5mCgAy9L3sscfWMewQSMgBdPU8KWWwpSGq5DJyAFw==}
+    peerDependencies:
+      react: ^16.13 || ^17 || ^18 || ^19
 
   '@isaacs/cliui@8.0.2':
     resolution: {integrity: sha512-O8jcjabXaleOG9DQ0+ARXWZBTfnP4WNAqzuiJK7ll44AmxGKv/J2M4TPjxjY3znBCfvBXFzucm1twdyFybFqEA==}
@@ -3236,6 +3244,10 @@ snapshots:
 
   '@esbuild/win32-x64@0.28.2':
     optional: true
+
+  '@icons-pack/react-simple-icons@13.15.1(react@19.3.0)':
+    dependencies:
+      react: 19.3.0
 
   '@isaacs/cliui@8.0.2':
     dependencies:

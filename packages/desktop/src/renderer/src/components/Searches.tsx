@@ -1,3 +1,4 @@
+import { SiGithub } from "@icons-pack/react-simple-icons";
 import { useCallback, useEffect, useState, type JSX } from "react";
 import type { ElectronAPI, SearchPreview } from "../../../types/electronAPI.js";
 import { Button } from "./Button.js";
@@ -195,6 +196,7 @@ export function Searches({ api }: { api: ElectronAPI }): JSX.Element {
           {busy ? "Saving…" : "Save"}
         </Button>
         <Button size="sm" onClick={() => void api.app.openExternal(BUILD_URL)}>
+          <SiGithub aria-hidden="true" />
           Build one on GitHub
         </Button>
         {fromDefaults && <span className={styles.note}>these are the defaults</span>}

@@ -1,3 +1,4 @@
+import { SiGithub } from "@icons-pack/react-simple-icons";
 import { useCallback, useEffect, useState, type FormEvent, type JSX } from "react";
 import type { DevicePrompt, ElectronAPI, GithubIdentity } from "../../../types/electronAPI.js";
 import { Button } from "./Button.js";
@@ -154,7 +155,13 @@ export function GithubSignIn({ api, onChange }: { api: ElectronAPI; onChange?: (
       <div className={styles.label}>GitHub</div>
       {identity ? (
         <div className={styles.row}>
-          {identity.avatarUrl && <img className={styles.avatar} src={identity.avatarUrl} alt="" width={38} height={38} />}
+          {identity.avatarUrl ? (
+            <img className={styles.avatar} src={identity.avatarUrl} alt="" width={38} height={38} />
+          ) : (
+            <span className={styles.avatarMark} aria-hidden="true">
+              <SiGithub />
+            </span>
+          )}
           <div className={styles.who}>
             <div className={styles.login}>{identity.login}</div>
             <div className={styles.sub}>{identity.scopes.length ? `signed in · ${identity.scopes.join(", ")}` : "signed in"}</div>
@@ -187,10 +194,12 @@ export function GithubSignIn({ api, onChange }: { api: ElectronAPI; onChange?: (
           </div>
           <div className={styles.ways}>
             <Button variant="primary" disabled={busy || !loaded} onClick={() => void signIn()}>
+              <SiGithub aria-hidden="true" />
               Sign in with GitHub
             </Button>
             {cli && (
               <Button disabled={busy} onClick={() => void useCli()} title="Take the token the GitHub CLI is signed in with">
+                <SiGithub aria-hidden="true" />
                 Use the GitHub CLI token
               </Button>
             )}
@@ -226,7 +235,7 @@ export function GithubSignIn({ api, onChange }: { api: ElectronAPI; onChange?: (
               <div className={styles.hint}>
                 Signing in with GitHub needs an OAuth App of your own with Device Flow enabled. It has no secret.{" "}
                 <button className={styles.link} type="button" onClick={() => void api.app.openExternal(OAUTH_APPS_URL)}>
-                  Register one
+                  Register one on GitHub
                 </button>
               </div>
             </form>

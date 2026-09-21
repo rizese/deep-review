@@ -25,6 +25,7 @@
     "@deep-review/slicer": "workspace:*",
     "@electron-toolkit/preload": "^3.0.1",
     "@electron-toolkit/utils": "^3.0.0",
+    "@icons-pack/react-simple-icons": "^13.15.1",
     "ai": "^7.0.69",
     "diff": "^8.0.4",
     "lucide-react": "^1.46.0",

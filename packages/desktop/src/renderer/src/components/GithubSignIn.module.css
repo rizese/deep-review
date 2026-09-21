@@ -5,6 +5,8 @@
 
 .row { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; }
 .avatar { width: 2.4rem; height: 2.4rem; border-radius: 50%; border: 1px solid var(--glass-edge); background: var(--panel-2); }
+.avatarMark { display: inline-flex; align-items: center; justify-content: center; width: 2.4rem; height: 2.4rem; color: var(--ink); }
+.avatarMark svg { width: 1.8rem; height: 1.8rem; }
 .who { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
 .login { font-weight: 600; letter-spacing: -0.01em; }
 .sub { color: var(--ink-faint); font-size: 0.78rem; overflow-wrap: anywhere; }

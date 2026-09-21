@@ -1,5 +1,5 @@
 import type { JSX } from "react";
-import { ExternalLink } from "lucide-react";
+import { SiGithub } from "@icons-pack/react-simple-icons";
 import type { MouseEvent } from "react";
 import { Button } from "../components/Button.js";
 import { SizeBar } from "../components/SizeBar.js";
@@ -107,7 +107,7 @@ function Card({ pr, hidden }: { pr: PrView; hidden: boolean }): JSX.Element {
           </Button>
         )}
         <a className={styles.gh} href={pr.prUrl} target="_blank" rel="noopener" title="Open on GitHub" aria-label="Open on GitHub">
-          <ExternalLink aria-hidden="true" />
+          <SiGithub aria-hidden="true" />
         </a>
         <Button variant="danger" size="sm" title="Drop this PR from the server" onClick={() => void forgetPr(pr.key)}>
           forget
