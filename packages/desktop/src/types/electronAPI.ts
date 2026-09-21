@@ -13,6 +13,12 @@ export interface Settings {
   linearApiKey: string;
   /** Model id for slicing; empty means the CLI's default. */
   model: string;
+  /**
+   * The client id of the OAuth App that signing in with GitHub uses. Public
+   * by design — the Device Flow has no secret — but one per installation,
+   * so it is kept here rather than baked into the build.
+   */
+  githubClientId: string;
   openAtLogin: boolean;
 }
 
@@ -20,6 +26,22 @@ export interface WatchedRepoEntry {
   repo: string;
   query?: string | undefined;
   authoredQuery?: string | undefined;
+}
+
+/** Who the app is signed in to GitHub as. */
+export interface GithubIdentity {
+  login: string;
+  name: string | null;
+  avatarUrl: string;
+  /** What the token may do, as GitHub reports it; empty when it does not say. */
+  scopes: string[];
+}
+
+/** What to show the reader while the browser half of signing in happens. */
+export interface DevicePrompt {
+  userCode: string;
+  verificationUri: string;
+  expiresAt: number;
 }
 
 /** How the watcher stands: whether it can poll at all, and how its last poll went. */
@@ -56,6 +78,23 @@ export interface WatchAPI {
   onStatus: (callback: (status: WatchStatus) => void) => () => void;
 }
 
+export interface AuthAPI {
+  /** Who the stored token belongs to; null when there is no token, and an error when GitHub has stopped taking it. */
+  identity: () => Promise<Result<GithubIdentity | null>>;
+  /** Begin the Device Flow: the browser opens and this returns the code to show. The token lands later, on onChanged. */
+  signIn: () => Promise<Result<DevicePrompt>>;
+  /** Stop waiting for the reader to approve. */
+  cancel: () => Promise<Result>;
+  /** Whether the GitHub CLI on this machine has a token to lend. */
+  cliAvailable: () => Promise<Result<boolean>>;
+  /** Take the GitHub CLI's token as the app's own. */
+  useCli: () => Promise<Result<GithubIdentity>>;
+  /** Forget the token. */
+  signOut: () => Promise<Result>;
+  /** The signed-in identity changed. Returns the way to stop listening. */
+  onChanged: (callback: (identity: GithubIdentity | null) => void) => () => void;
+}
+
 export interface AppAPI {
   version: () => Promise<string>;
   openExternal: (url: string) => Promise<void>;
@@ -68,6 +107,7 @@ export interface AppAPI {
 }
 
 export interface ElectronAPI {
+  auth: AuthAPI;
   settings: SettingsAPI;
   watch: WatchAPI;
   app: AppAPI;

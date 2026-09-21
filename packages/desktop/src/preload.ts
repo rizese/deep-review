@@ -1,5 +1,19 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { AppAPI, ElectronAPI, Settings, SettingsAPI, WatchAPI, WatchStatus } from "./types/electronAPI.js";
+import type { AppAPI, AuthAPI, ElectronAPI, GithubIdentity, Settings, SettingsAPI, WatchAPI, WatchStatus } from "./types/electronAPI.js";
+
+const auth: AuthAPI = {
+  identity: () => ipcRenderer.invoke("auth:identity"),
+  signIn: () => ipcRenderer.invoke("auth:sign-in"),
+  cancel: () => ipcRenderer.invoke("auth:cancel"),
+  cliAvailable: () => ipcRenderer.invoke("auth:cli-available"),
+  useCli: () => ipcRenderer.invoke("auth:use-cli"),
+  signOut: () => ipcRenderer.invoke("auth:sign-out"),
+  onChanged: (callback) => {
+    const listener = (_event: unknown, identity: GithubIdentity | null): void => callback(identity);
+    ipcRenderer.on("auth:changed", listener);
+    return () => ipcRenderer.removeListener("auth:changed", listener);
+  },
+};
 
 const settings: SettingsAPI = {
   get: () => ipcRenderer.invoke("settings:get"),
@@ -31,7 +45,7 @@ const app: AppAPI = {
   opened: (key: string) => ipcRenderer.invoke("app:opened", key),
 };
 
-const api: ElectronAPI = { settings, watch, app };
+const api: ElectronAPI = { auth, settings, watch, app };
 contextBridge.exposeInMainWorld("electronAPI", api);
 
 export type { ElectronAPI };

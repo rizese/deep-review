@@ -127,16 +127,16 @@ function Setup({ gap, held }: { gap: "token" | "repos"; held: number }): JSX.Ele
   return (
     <section className={styles.setup} aria-label="Set up">
       <div>
-        <div className={styles.setupTitle}>{gap === "token" ? "Connect GitHub to start watching" : "Name a repo to watch"}</div>
+        <div className={styles.setupTitle}>{gap === "token" ? "Sign in to GitHub to start watching" : "Name a repo to watch"}</div>
         <div className={styles.setupBody}>
           {gap === "token"
-            ? "Deep Review looks for the PRs waiting on your review and builds a reading of each one. It needs a GitHub token to look."
-            : "A token is in place. Watch a repo and the PRs waiting on you there appear here as they are built."}{" "}
+            ? "Deep Review looks for the PRs waiting on your review and builds a reading of each one. It needs your GitHub account to look."
+            : "You are signed in. Watch a repo and the PRs waiting on you there appear here as they are built."}{" "}
           {meantime}
         </div>
       </div>
       <Button variant="primary" onClick={() => go("/settings")}>
-        {gap === "token" ? "Add a token" : "Watch a repo"}
+        {gap === "token" ? "Sign in with GitHub" : "Watch a repo"}
       </Button>
     </section>
   );

@@ -11,9 +11,10 @@ import { readFileSync, writeFileSync } from "node:fs";
 import type { PrView } from "@deep-review/review/api";
 import type { NavServer } from "@deep-review/review/daemon";
 import { startBadge, type Badge } from "./main/badge.js";
+import { cliToken, identityOf, startDeviceFlow, waitForToken } from "./main/githubAuth.js";
 import { applyToEnvironment, readSettings, writeSettings } from "./main/settings.js";
 import { hasGithubToken, startWatchLoop, type WatchLoop } from "./main/watch.js";
-import type { Result, Settings, WatchedRepoEntry, WatchStatus } from "./types/electronAPI.js";
+import type { DevicePrompt, GithubIdentity, Result, Settings, WatchedRepoEntry, WatchStatus } from "./types/electronAPI.js";
 
 /**
  * Deep Review as an app. The main process is the review server — the same
@@ -29,6 +30,8 @@ let tray: Tray | null = null;
 let server: NavServer | null = null;
 let watchLoop: WatchLoop | null = null;
 let badge: Badge | null = null;
+/** The device-flow wait in progress, so a second attempt or a quit can call it off. */
+let signingIn: AbortController | null = null;
 const log = (message: string): void => console.log(`[deep-review] ${message}`);
 
 const ok = <T,>(data?: T): Result<T> => (data === undefined ? { success: true } : { success: true, data });
@@ -167,6 +170,105 @@ function tellStatus(status: WatchStatus): void {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("watch:status", status);
 }
 
+/**
+ * Signing in to GitHub. The token a sign-in yields is kept exactly where a
+ * pasted one is — the encrypted settings — so everything downstream, the
+ * watcher and the server both, carries on reading GITHUB_TOKEN from the
+ * environment and knows nothing about how it got there.
+ */
+async function storeToken(token: string): Promise<GithubIdentity> {
+  // Ask who it is before keeping it: a token GitHub will not take is worse
+  // than no token, because the watcher would keep trying it.
+  const identity = await identityOf(token);
+  const settings = await readSettings();
+  const next = { ...settings, githubToken: token };
+  await writeSettings(next);
+  applyToEnvironment(next);
+  watchLoop?.refresh();
+  void watchLoop?.pollNow();
+  tellIdentity(identity);
+  return identity;
+}
+
+function tellIdentity(identity: GithubIdentity | null): void {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("auth:changed", identity);
+}
+
+function registerAuthIpc(): void {
+  ipcMain.handle("auth:identity", async (): Promise<Result<GithubIdentity | null>> => {
+    try {
+      const { githubToken } = await readSettings();
+      return ok<GithubIdentity | null>(githubToken ? await identityOf(githubToken) : null);
+    } catch (error) {
+      return failed(error);
+    }
+  });
+  ipcMain.handle("auth:sign-in", async (): Promise<Result<DevicePrompt>> => {
+    try {
+      const { githubClientId } = await readSettings();
+      if (!githubClientId) throw new Error("no OAuth client id is set; register an OAuth App with Device Flow enabled and paste its client id");
+      signingIn?.abort();
+      const start = await startDeviceFlow(githubClientId);
+      const controller = new AbortController();
+      signingIn = controller;
+      // The reader does their half in the browser; this half waits.
+      void shell.openExternal(start.prompt.verificationUri);
+      void waitForToken(githubClientId, start, { signal: controller.signal })
+        .then((token) => storeToken(token))
+        .catch((error: unknown) => {
+          if (controller.signal.aborted) return;
+          log(`sign-in failed: ${error instanceof Error ? error.message : String(error)}`);
+          tellIdentity(null);
+        })
+        .finally(() => {
+          if (signingIn === controller) signingIn = null;
+        });
+      return ok(start.prompt);
+    } catch (error) {
+      return failed(error);
+    }
+  });
+  ipcMain.handle("auth:cancel", (): Result => {
+    signingIn?.abort();
+    signingIn = null;
+    return ok();
+  });
+  ipcMain.handle("auth:cli-available", async (): Promise<Result<boolean>> => {
+    try {
+      return ok((await cliToken()) !== null);
+    } catch (error) {
+      return failed(error);
+    }
+  });
+  ipcMain.handle("auth:use-cli", async (): Promise<Result<GithubIdentity>> => {
+    try {
+      const token = await cliToken();
+      if (!token) throw new Error("the GitHub CLI has no token to lend; run `gh auth login` first");
+      return ok(await storeToken(token));
+    } catch (error) {
+      return failed(error);
+    }
+  });
+  ipcMain.handle("auth:sign-out", async (): Promise<Result> => {
+    try {
+      signingIn?.abort();
+      signingIn = null;
+      const settings = await readSettings();
+      const next = { ...settings, githubToken: "" };
+      await writeSettings(next);
+      // The environment keeps a deleted key only if the process was started
+      // with one; applyToEnvironment leaves that alone, so clear it here.
+      delete process.env.GITHUB_TOKEN;
+      applyToEnvironment(next);
+      watchLoop?.refresh();
+      tellIdentity(null);
+      return ok();
+    } catch (error) {
+      return failed(error);
+    }
+  });
+}
+
 function registerIpc(): void {
   ipcMain.handle("settings:get", async (): Promise<Result<Settings>> => {
     try {
@@ -273,6 +375,7 @@ app.whenReady().then(async () => {
   const settings = await readSettings();
   applyToEnvironment(settings);
   registerIpc();
+  registerAuthIpc();
   try {
     await startServer();
   } catch (error) {
@@ -295,6 +398,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  signingIn?.abort();
   watchLoop?.stop();
   badge?.stop();
   if (server) void server.close();

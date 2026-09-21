@@ -1,18 +1,17 @@
 import { useCallback, useEffect, useState, type FormEvent, type JSX } from "react";
 import type { ElectronAPI, Settings as SettingsValues, WatchedRepoEntry } from "../../../types/electronAPI.js";
 import { Button } from "../components/Button.js";
+import { GithubSignIn } from "../components/GithubSignIn.js";
 import styles from "./Settings.module.css";
 
-const TOKENS_URL = "https://github.com/settings/tokens";
-
 interface KeyField {
-  id: "githubToken" | "openaiApiKey" | "anthropicApiKey" | "grokApiKey" | "linearApiKey";
+  id: "openaiApiKey" | "anthropicApiKey" | "grokApiKey" | "linearApiKey";
   label: string;
   hint: string;
 }
 
+/** The GitHub token is not here: it belongs to signing in (GithubSignIn). */
 const KEY_FIELDS: KeyField[] = [
-  { id: "githubToken", label: "GitHub token", hint: "Finds your PRs and reads their diffs; a classic token with repo scope." },
   { id: "openaiApiKey", label: "OpenAI key", hint: "For slicing with an OpenAI model." },
   { id: "anthropicApiKey", label: "Anthropic key", hint: "For slicing with a Claude model." },
   { id: "grokApiKey", label: "Grok key", hint: "For slicing with a Grok model." },
@@ -26,6 +25,7 @@ const EMPTY: SettingsValues = {
   grokApiKey: "",
   linearApiKey: "",
   model: "",
+  githubClientId: "",
   openAtLogin: false,
 };
 
@@ -79,7 +79,11 @@ function Keys({ api }: { api: ElectronAPI }): JSX.Element {
     setBusy(true);
     setNote(null);
     try {
-      const result = await api.settings.set(values);
+      // Signing in writes the GitHub token from another card while this form
+      // is open; read the settings back so saving here cannot undo that.
+      const current = await api.settings.get();
+      const keep = current.success && current.data ? { githubToken: current.data.githubToken, githubClientId: current.data.githubClientId } : {};
+      const result = await api.settings.set({ ...values, ...keep });
       setNote(result.success ? { text: "saved", bad: false } : { text: result.error ?? "could not save", bad: true });
     } catch (error) {
       setNote({ text: reason(error, "could not save"), bad: true });
@@ -124,14 +128,6 @@ function Keys({ api }: { api: ElectronAPI }): JSX.Element {
             </div>
             <div className={styles.hint}>
               {field.hint}
-              {field.id === "githubToken" && (
-                <>
-                  {" "}
-                  <button className={styles.link} type="button" onClick={() => void api.app.openExternal(TOKENS_URL)}>
-                    Make one on GitHub
-                  </button>
-                </>
-              )}
             </div>
           </div>
         ))}
@@ -362,6 +358,7 @@ export function Settings(): JSX.Element {
       <main className={styles.page}>
         {api ? (
           <>
+            <GithubSignIn api={api} />
             <Keys api={api} />
             <Repos api={api} />
             <About api={api} />
