@@ -1,8 +1,9 @@
 import { SiGithub } from "@icons-pack/react-simple-icons";
-import type { JSX } from "react";
+import { useState, type JSX } from "react";
 import { useGithubAuth } from "../lib/useGithubAuth.js";
 import { Button } from "./Button.js";
 import { DeviceCode } from "./DeviceCode.js";
+import { TokenPaste } from "./TokenPaste.js";
 import styles from "./GithubSignIn.module.css";
 
 /**
@@ -11,6 +12,7 @@ import styles from "./GithubSignIn.module.css";
  */
 export function GithubSignIn(): JSX.Element {
   const auth = useGithubAuth();
+  const [pasting, setPasting] = useState(false);
   const note = auth.note;
   const busy = auth.busy;
 
@@ -37,6 +39,8 @@ export function GithubSignIn(): JSX.Element {
         </div>
       ) : auth.device ? (
         <DeviceCode prompt={auth.device} onCancel={() => void auth.cancel()} />
+      ) : pasting ? (
+        <TokenPaste onSubmit={auth.signInWithToken} onBack={() => setPasting(false)} busy={busy} inCard />
       ) : (
         <>
           <div className={styles.blurb}>
@@ -48,12 +52,10 @@ export function GithubSignIn(): JSX.Element {
               <SiGithub aria-hidden="true" />
               Sign in with GitHub
             </Button>
-            {auth.cli && (
-              <Button disabled={busy} onClick={() => void auth.useCli()} title="Take the token the GitHub CLI is signed in with">
-                <SiGithub aria-hidden="true" />
-                Use the GitHub CLI token
-              </Button>
-            )}
+            <Button disabled={busy} onClick={() => setPasting(true)} title="Paste the token the GitHub CLI is signed in with">
+              <SiGithub aria-hidden="true" />
+              Use the GitHub CLI token
+            </Button>
           </div>
         </>
       )}

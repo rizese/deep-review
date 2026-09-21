@@ -13,11 +13,6 @@
  * without reaching GitHub.
  */
 
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-
-const run = promisify(execFile);
-
 const DEVICE_CODE_URL = "https://github.com/login/device/code";
 const TOKEN_URL = "https://github.com/login/oauth/access_token";
 const USER_URL = "https://api.github.com/user";
@@ -254,16 +249,4 @@ export async function identityOf(token: string, fetchImpl: Fetch = fetch): Promi
     avatarUrl: body.avatar_url ?? "",
     scopes: parseScopes(res.headers.get("x-oauth-scopes")),
   };
-}
-
-/** The token the GitHub CLI is signed in with, or null if there is none to take. */
-export async function cliToken(exec: typeof run = run): Promise<string | null> {
-  try {
-    const { stdout } = await exec("gh", ["auth", "token"], { timeout: 5000 });
-    const token = stdout.trim();
-    return token || null;
-  } catch {
-    // `gh` is not installed, or nobody is signed in to it.
-    return null;
-  }
 }

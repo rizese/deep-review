@@ -106,10 +106,8 @@ export interface AuthAPI {
   signIn: () => Promise<Result<DevicePrompt>>;
   /** Stop waiting for the reader to approve. */
   cancel: () => Promise<Result>;
-  /** Whether the GitHub CLI on this machine has a token to lend. */
-  cliAvailable: () => Promise<Result<boolean>>;
-  /** Take the GitHub CLI's token as the app's own. */
-  useCli: () => Promise<Result<GithubIdentity>>;
+  /** Sign in with a token the reader pasted — from `gh auth token`, or one they made. */
+  signInWithToken: (token: string) => Promise<Result<GithubIdentity>>;
   /** Forget the token. */
   signOut: () => Promise<Result>;
   /** The signed-in identity changed. Returns the way to stop listening. */

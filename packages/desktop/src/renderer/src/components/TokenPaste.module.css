@@ -1,0 +1,25 @@
+/* The other way in: no browser round trip, just a token the reader
+   already has. The command to get one is the instruction. */
+.paste { display: flex; flex-direction: column; gap: 0.5rem; align-items: center; width: 100%; max-width: 30rem; }
+.how { color: var(--ink-soft); font-size: 0.82rem; text-align: center; margin: 0; }
+.cmd {
+  display: inline-flex; align-items: center; gap: 0.4rem; vertical-align: baseline;
+  padding: 0.05rem 0.5rem; border-radius: 999px;
+  border: 1px solid var(--glass-edge); background: var(--panel-2);
+  font-family: var(--mono); font-size: 0.85em; color: var(--ink);
+}
+.copy { display: inline-flex; border: 0; padding: 0; background: none; color: var(--ink-faint); cursor: pointer; }
+.copy:hover { color: var(--ink); }
+.copy[data-copied="true"] { color: var(--add-edge); }
+.copy svg { width: 0.85rem; height: 0.85rem; stroke-width: 1.8; }
+.form { display: flex; gap: 0.5rem; width: 100%; }
+.input {
+  flex: 1; min-width: 0; padding: 0.38rem 0.9rem; border-radius: 999px;
+  border: 1px solid var(--glass-edge); background: var(--panel); color: var(--ink);
+  font-family: var(--mono); font-size: 0.82rem;
+}
+.input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* Inside a settings card the column is left-aligned and unbounded. */
+.inCard { align-items: stretch; max-width: none; }
+.inCard .how { text-align: left; }

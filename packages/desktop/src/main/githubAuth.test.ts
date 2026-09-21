@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { cliToken, identityOf, interpretPoll, needsRefresh, parseScopes, refreshGrant, startDeviceFlow, waitForToken } from "./githubAuth.js";
+import { identityOf, interpretPoll, needsRefresh, parseScopes, refreshGrant, startDeviceFlow, waitForToken } from "./githubAuth.js";
 
 const json = (body: unknown, init: { status?: number; headers?: Record<string, string> } = {}): Response =>
   new Response(JSON.stringify(body), { status: init.status ?? 200, headers: { "Content-Type": "application/json", ...init.headers } });
@@ -162,17 +162,5 @@ describe("identityOf", () => {
   it("reads no scopes at all without complaint", () => {
     expect(parseScopes(null)).toEqual([]);
     expect(parseScopes("")).toEqual([]);
-  });
-});
-
-describe("cliToken", () => {
-  it("takes the token gh is signed in with", async () => {
-    const exec = vi.fn(async () => ({ stdout: "gho_cli\n", stderr: "" }));
-    expect(await cliToken(exec as never)).toBe("gho_cli");
-  });
-
-  it("is quiet when gh is missing or signed out", async () => {
-    expect(await cliToken((async () => { throw new Error("not found"); }) as never)).toBeNull();
-    expect(await cliToken((async () => ({ stdout: "\n", stderr: "" })) as never)).toBeNull();
   });
 });

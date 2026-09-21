@@ -11,15 +11,13 @@ export interface GithubAuth {
   identity: GithubIdentity | null;
   /** The code to type into a browser while a sign-in is in flight. */
   device: DevicePrompt | null;
-  /** Whether the GitHub CLI on this machine has a token to lend. */
-  cli: boolean;
   busy: boolean;
   /** Whether the first answer about who this is has come back. */
   loaded: boolean;
   note: AuthNote | null;
   signIn: () => Promise<void>;
   cancel: () => Promise<void>;
-  useCli: () => Promise<void>;
+  signInWithToken: (token: string) => Promise<boolean>;
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -38,7 +36,6 @@ function reason(error: unknown, fallback: string): string {
 export function useGithubAuth(): GithubAuth {
   const [identity, setIdentity] = useState<GithubIdentity | null>(null);
   const [device, setDevice] = useState<DevicePrompt | null>(null);
-  const [cli, setCli] = useState(false);
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [note, setNote] = useState<AuthNote | null>(null);
@@ -68,9 +65,6 @@ export function useGithubAuth(): GithubAuth {
     }
     let alive = true;
     void refresh();
-    void api.auth.cliAvailable().then((result) => {
-      if (alive && result.success) setCli(Boolean(result.data));
-    });
     const stop = api.auth.onChanged((next) => {
       if (!alive) return;
       setIdentity(next);
@@ -108,20 +102,25 @@ export function useGithubAuth(): GithubAuth {
     setBusy(false);
   }, []);
 
-  const useCli = useCallback(async (): Promise<void> => {
+  /** Answers whether it worked, so the field can clear itself only then. */
+  const signInWithToken = useCallback(async (token: string): Promise<boolean> => {
     const api = window.electronAPI;
-    if (!api) return;
+    if (!api) return false;
     setBusy(true);
     setNote(null);
     try {
-      const result = await api.auth.useCli();
+      const result = await api.auth.signInWithToken(token);
       if (result.success && result.data) {
         setIdentity(result.data);
         setDevice(null);
         setNote({ text: `signed in as ${result.data.login}`, bad: false });
-      } else setNote({ text: result.error ?? "could not take the CLI's token", bad: true });
+        return true;
+      }
+      setNote({ text: result.error ?? "GitHub would not take that token", bad: true });
+      return false;
     } catch (error) {
-      setNote({ text: reason(error, "could not take the CLI's token"), bad: true });
+      setNote({ text: reason(error, "GitHub would not take that token"), bad: true });
+      return false;
     } finally {
       setBusy(false);
     }
@@ -138,5 +137,5 @@ export function useGithubAuth(): GithubAuth {
     setBusy(false);
   }, []);
 
-  return { identity, device, cli, busy, loaded, note, signIn, cancel, useCli, signOut, refresh };
+  return { identity, device, busy, loaded, note, signIn, cancel, signInWithToken, signOut, refresh };
 }

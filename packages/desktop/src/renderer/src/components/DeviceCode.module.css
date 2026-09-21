@@ -4,6 +4,7 @@
   display: flex; align-items: center; gap: 0.9rem; flex-wrap: wrap;
   padding: 0.85rem 1rem; border: 1px solid var(--accent); border-radius: 8px; background: var(--accent-soft);
   cursor: pointer; transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  position: relative;
 }
 .device:hover { box-shadow: 0 0 0 4px var(--accent-soft); }
 /* The code and the way to copy it read as one thing. */
@@ -13,6 +14,8 @@
   display: inline-flex; align-items: center; justify-content: center;
   width: 1.9rem; height: 1.9rem; flex: none; border: 0; border-radius: 50%;
   background: transparent; color: var(--ink-soft); cursor: pointer;
+  position: absolute;
+  top: 0px; right: 0;
 }
 .copy:hover { color: var(--ink); background: var(--glass-hi); }
 .copy[data-copied="true"] { color: var(--add-edge); }

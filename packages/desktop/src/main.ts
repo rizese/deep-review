@@ -11,7 +11,7 @@ import { agentInstalled, uninstallAgent } from "@deep-review/review/launchAgent"
 import type { PrView } from "@deep-review/review/api";
 import type { NavServer } from "@deep-review/review/daemon";
 import { startBadge, type Badge } from "./main/badge.js";
-import { cliToken, clientIdOf, identityOf, needsRefresh, refreshGrant, startDeviceFlow, waitForToken, type TokenGrant } from "./main/githubAuth.js";
+import { clientIdOf, identityOf, needsRefresh, refreshGrant, startDeviceFlow, waitForToken, type TokenGrant } from "./main/githubAuth.js";
 import { applyToEnvironment, readSettings, writeSettings } from "./main/settings.js";
 import { hasGithubToken, startWatchLoop, type WatchLoop } from "./main/watch.js";
 import type { DevicePrompt, GithubIdentity, Result, SearchConfig, SearchPreview, Settings, WatchStatus } from "./types/electronAPI.js";
@@ -276,19 +276,12 @@ function registerAuthIpc(): void {
     signingIn = null;
     return ok();
   });
-  ipcMain.handle("auth:cli-available", async (): Promise<Result<boolean>> => {
+  ipcMain.handle("auth:token", async (_event, token: unknown): Promise<Result<GithubIdentity>> => {
     try {
-      return ok((await cliToken()) !== null);
-    } catch (error) {
-      return failed(error);
-    }
-  });
-  ipcMain.handle("auth:use-cli", async (): Promise<Result<GithubIdentity>> => {
-    try {
-      const token = await cliToken();
-      if (!token) throw new Error("the GitHub CLI has no token to lend; run `gh auth login` first");
-      // The CLI's token is the CLI's to renew; this one is simply kept.
-      return ok(await storeToken({ token, expiresAt: null, refreshToken: "", refreshExpiresAt: null }));
+      const value = String(token ?? "").trim();
+      if (!value) throw new Error("paste a token first");
+      // Whoever issued it renews it; this one is simply kept and checked.
+      return ok(await storeToken({ token: value, expiresAt: null, refreshToken: "", refreshExpiresAt: null }));
     } catch (error) {
       return failed(error);
     }

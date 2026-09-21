@@ -5,8 +5,7 @@ const auth: AuthAPI = {
   identity: () => ipcRenderer.invoke("auth:identity"),
   signIn: () => ipcRenderer.invoke("auth:sign-in"),
   cancel: () => ipcRenderer.invoke("auth:cancel"),
-  cliAvailable: () => ipcRenderer.invoke("auth:cli-available"),
-  useCli: () => ipcRenderer.invoke("auth:use-cli"),
+  signInWithToken: (token: string) => ipcRenderer.invoke("auth:token", token),
   signOut: () => ipcRenderer.invoke("auth:sign-out"),
   onChanged: (callback) => {
     const listener = (_event: unknown, identity: GithubIdentity | null): void => callback(identity);
