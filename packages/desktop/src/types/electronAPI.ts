@@ -19,6 +19,13 @@ export interface Settings {
    * so it is kept here rather than baked into the build.
    */
   githubClientId: string;
+  /**
+   * Traded for a new token when the current one expires. Only apps
+   * registered with "Expire user access tokens" ever issue one.
+   */
+  githubRefreshToken: string;
+  /** When the GitHub token stops working; 0 when it never does. */
+  githubTokenExpiresAt: number;
   openAtLogin: boolean;
 }
 

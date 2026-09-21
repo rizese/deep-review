@@ -1,12 +1,32 @@
 import { describe, expect, it, vi } from "vitest";
-import { cliToken, identityOf, interpretPoll, parseScopes, startDeviceFlow, waitForToken } from "./githubAuth.js";
+import { cliToken, identityOf, interpretPoll, needsRefresh, parseScopes, refreshGrant, startDeviceFlow, waitForToken } from "./githubAuth.js";
 
 const json = (body: unknown, init: { status?: number; headers?: Record<string, string> } = {}): Response =>
   new Response(JSON.stringify(body), { status: init.status ?? 200, headers: { "Content-Type": "application/json", ...init.headers } });
 
 describe("interpretPoll", () => {
   it("takes the token when it arrives", () => {
-    expect(interpretPoll({ access_token: "gho_1" }, 5000)).toEqual({ kind: "token", token: "gho_1" });
+    const outcome = interpretPoll({ access_token: "gho_1" }, 5000);
+    expect(outcome).toMatchObject({ kind: "token", grant: { token: "gho_1" } });
+  });
+
+  it("reads an expiring grant, and a non-expiring one, from the same answer shape", () => {
+    // An app registered with "Expire user access tokens" sends an expiry
+    // and a refresh token; one registered without sends neither.
+    const expiring = interpretPoll(
+      { access_token: "gho_1", expires_in: 28_800, refresh_token: "ghr_1", refresh_token_expires_in: 15_552_000 },
+      5000,
+    );
+    expect(expiring).toMatchObject({ kind: "token" });
+    if (expiring.kind !== "token") throw new Error("expected a token");
+    expect(expiring.grant.refreshToken).toBe("ghr_1");
+    expect(expiring.grant.expiresAt).toBeGreaterThan(Date.now());
+    expect(expiring.grant.refreshExpiresAt).toBeGreaterThan(expiring.grant.expiresAt!);
+
+    const forever = interpretPoll({ access_token: "gho_2" }, 5000);
+    if (forever.kind !== "token") throw new Error("expected a token");
+    expect(forever.grant.expiresAt).toBeNull();
+    expect(forever.grant.refreshToken).toBe("");
   });
 
   it("keeps waiting while the reader has not answered", () => {
@@ -59,7 +79,7 @@ describe("waitForToken", () => {
       { prompt: { userCode: "u", verificationUri: "v", expiresAt: Date.now() + 60_000 }, deviceCode: "d", intervalMs: 5000 },
       { fetchImpl: fetchImpl as never, sleep: async (ms) => void waits.push(ms) },
     );
-    expect(token).toBe("gho_2");
+    expect(token.token).toBe("gho_2");
     expect(waits).toEqual([5000, 5000, 10_000]);
   });
 
@@ -83,6 +103,41 @@ describe("waitForToken", () => {
         { fetchImpl: (async () => json({})) as never, sleep: async () => {} },
       ),
     ).rejects.toThrow("expired");
+  });
+});
+
+describe("refreshGrant", () => {
+  it("trades a spent token for the next one, and keeps the next refresh token", async () => {
+    const fetchImpl = vi.fn(async (_url: string, _init?: RequestInit) =>
+      json({ access_token: "gho_new", expires_in: 28_800, refresh_token: "ghr_new", refresh_token_expires_in: 15_552_000 }),
+    );
+    const grant = await refreshGrant("client", "ghr_old", fetchImpl as never);
+    expect(grant.token).toBe("gho_new");
+    expect(grant.refreshToken).toBe("ghr_new");
+    const init = fetchImpl.mock.calls[0]?.[1];
+    expect(JSON.parse(String(init?.body))).toEqual({
+      client_id: "client",
+      grant_type: "refresh_token",
+      refresh_token: "ghr_old",
+    });
+  });
+
+  it("says why when GitHub will not trade", async () => {
+    const fetchImpl = vi.fn(async () => json({ error: "bad_refresh_token", error_description: "expired" }, { status: 400 }));
+    await expect(refreshGrant("c", "ghr_old", fetchImpl as never)).rejects.toThrow("expired");
+  });
+});
+
+describe("needsRefresh", () => {
+  it("is never true for a token that does not expire", () => {
+    expect(needsRefresh(null)).toBe(false);
+  });
+
+  it("trades a token in a minute before it stops working, not after", () => {
+    const now = 1_000_000;
+    expect(needsRefresh(now + 5 * 60_000, now)).toBe(false);
+    expect(needsRefresh(now + 30_000, now)).toBe(true);
+    expect(needsRefresh(now - 1, now)).toBe(true);
   });
 });
 

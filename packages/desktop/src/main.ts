@@ -11,7 +11,7 @@ import { agentInstalled, uninstallAgent } from "@deep-review/review/launchAgent"
 import type { PrView } from "@deep-review/review/api";
 import type { NavServer } from "@deep-review/review/daemon";
 import { startBadge, type Badge } from "./main/badge.js";
-import { cliToken, identityOf, startDeviceFlow, waitForToken } from "./main/githubAuth.js";
+import { cliToken, identityOf, needsRefresh, refreshGrant, startDeviceFlow, waitForToken, type TokenGrant } from "./main/githubAuth.js";
 import { applyToEnvironment, readSettings, writeSettings } from "./main/settings.js";
 import { hasGithubToken, startWatchLoop, type WatchLoop } from "./main/watch.js";
 import type { DevicePrompt, GithubIdentity, Result, SearchConfig, SearchPreview, Settings, WatchStatus } from "./types/electronAPI.js";
@@ -176,18 +176,54 @@ function tellStatus(status: WatchStatus): void {
  * watcher and the server both, carries on reading GITHUB_TOKEN from the
  * environment and knows nothing about how it got there.
  */
-async function storeToken(token: string): Promise<GithubIdentity> {
+async function storeToken(grant: TokenGrant): Promise<GithubIdentity> {
   // Ask who it is before keeping it: a token GitHub will not take is worse
   // than no token, because the watcher would keep trying it.
-  const identity = await identityOf(token);
+  const identity = await identityOf(grant.token);
   const settings = await readSettings();
-  const next = { ...settings, githubToken: token };
+  const next = {
+    ...settings,
+    githubToken: grant.token,
+    githubRefreshToken: grant.refreshToken,
+    githubTokenExpiresAt: grant.expiresAt ?? 0,
+  };
   await writeSettings(next);
   applyToEnvironment(next);
   watchLoop?.refresh();
   void watchLoop?.pollNow();
   tellIdentity(identity);
   return identity;
+}
+
+/**
+ * Keep the stored token usable.
+ *
+ * An OAuth App registered with "Expire user access tokens" issues tokens
+ * good for eight hours, so a watcher left running overnight would wake up
+ * to nothing but 401s. Before every poll the token is traded in if it is
+ * near its end. An app registered without that setting stores no refresh
+ * token and no expiry, and this does nothing at all.
+ */
+async function ensureFreshToken(): Promise<void> {
+  const settings = await readSettings();
+  const expiresAt = settings.githubTokenExpiresAt || null;
+  if (!needsRefresh(expiresAt) || !settings.githubRefreshToken || !settings.githubClientId) return;
+  try {
+    const grant = await refreshGrant(settings.githubClientId, settings.githubRefreshToken);
+    const next = {
+      ...settings,
+      githubToken: grant.token,
+      githubRefreshToken: grant.refreshToken,
+      githubTokenExpiresAt: grant.expiresAt ?? 0,
+    };
+    await writeSettings(next);
+    applyToEnvironment(next);
+    log("refreshed the GitHub token.");
+  } catch (error) {
+    // The refresh token is spent or revoked; signing in again is the only
+    // way back, and the pages are told so the card can say it.
+    log(`could not refresh the GitHub token: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 function tellIdentity(identity: GithubIdentity | null): void {
@@ -197,6 +233,7 @@ function tellIdentity(identity: GithubIdentity | null): void {
 function registerAuthIpc(): void {
   ipcMain.handle("auth:identity", async (): Promise<Result<GithubIdentity | null>> => {
     try {
+      await ensureFreshToken();
       const { githubToken } = await readSettings();
       return ok<GithubIdentity | null>(githubToken ? await identityOf(githubToken) : null);
     } catch (error) {
@@ -214,7 +251,7 @@ function registerAuthIpc(): void {
       // The reader does their half in the browser; this half waits.
       void shell.openExternal(start.prompt.verificationUri);
       void waitForToken(githubClientId, start, { signal: controller.signal })
-        .then((token) => storeToken(token))
+        .then((grant) => storeToken(grant))
         .catch((error: unknown) => {
           if (controller.signal.aborted) return;
           log(`sign-in failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -244,7 +281,8 @@ function registerAuthIpc(): void {
     try {
       const token = await cliToken();
       if (!token) throw new Error("the GitHub CLI has no token to lend; run `gh auth login` first");
-      return ok(await storeToken(token));
+      // The CLI's token is the CLI's to renew; this one is simply kept.
+      return ok(await storeToken({ token, expiresAt: null, refreshToken: "", refreshExpiresAt: null }));
     } catch (error) {
       return failed(error);
     }
@@ -254,7 +292,7 @@ function registerAuthIpc(): void {
       signingIn?.abort();
       signingIn = null;
       const settings = await readSettings();
-      const next = { ...settings, githubToken: "" };
+      const next = { ...settings, githubToken: "", githubRefreshToken: "", githubTokenExpiresAt: 0 };
       await writeSettings(next);
       // The environment keeps a deleted key only if the process was started
       // with one; applyToEnvironment leaves that alone, so clear it here.
@@ -388,7 +426,7 @@ app.whenReady().then(async () => {
   } catch (error) {
     log(`could not start the server: ${error instanceof Error ? error.message : String(error)}`);
   }
-  watchLoop = startWatchLoop({ log, onStatus: tellStatus });
+  watchLoop = startWatchLoop({ log, onStatus: tellStatus, before: ensureFreshToken });
   buildTray();
   createWindow();
 

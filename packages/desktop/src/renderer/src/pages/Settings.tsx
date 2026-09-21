@@ -27,6 +27,8 @@ const EMPTY: SettingsValues = {
   linearApiKey: "",
   model: "",
   githubClientId: "",
+  githubRefreshToken: "",
+  githubTokenExpiresAt: 0,
   openAtLogin: false,
 };
 
@@ -80,7 +82,15 @@ function Keys({ api }: { api: ElectronAPI }): JSX.Element {
       // Signing in writes the GitHub token from another card while this form
       // is open; read the settings back so saving here cannot undo that.
       const current = await api.settings.get();
-      const keep = current.success && current.data ? { githubToken: current.data.githubToken, githubClientId: current.data.githubClientId } : {};
+      const keep =
+        current.success && current.data
+          ? {
+              githubToken: current.data.githubToken,
+              githubClientId: current.data.githubClientId,
+              githubRefreshToken: current.data.githubRefreshToken,
+              githubTokenExpiresAt: current.data.githubTokenExpiresAt,
+            }
+          : {};
       const result = await api.settings.set({ ...values, ...keep });
       setNote(result.success ? { text: "saved", bad: false } : { text: result.error ?? "could not save", bad: true });
     } catch (error) {

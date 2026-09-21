@@ -31,6 +31,8 @@ export function startWatchLoop(options: {
   intervalMs?: number | undefined;
   log: (message: string) => void;
   onStatus?: ((status: WatchStatus) => void) | undefined;
+  /** Run before each poll — where a token near its expiry is traded in. */
+  before?: (() => Promise<void>) | undefined;
 }): WatchLoop {
   const intervalMs = options.intervalMs ?? DEFAULT_INTERVAL_MS;
   let inFlight: Promise<void> | null = null;
@@ -61,7 +63,9 @@ export function startWatchLoop(options: {
     }
     polling = true;
     tell();
-    inFlight = pollOnce({ onProgress: options.log })
+    inFlight = Promise.resolve()
+      .then(() => options.before?.())
+      .then(() => pollOnce({ onProgress: options.log }))
       .then((state) => {
         lastPollAt = state.lastPollAt ?? Date.now();
         lastError = state.lastError ?? null;

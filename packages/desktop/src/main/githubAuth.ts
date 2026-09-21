@@ -56,8 +56,40 @@ interface DeviceCodeBody {
 
 interface TokenBody {
   access_token?: string;
+  /** Seconds until the access token stops working; absent when it never does. */
+  expires_in?: number;
+  /** Present only when the app was registered with expiring user tokens. */
+  refresh_token?: string;
+  refresh_token_expires_in?: number;
   error?: string;
   error_description?: string;
+}
+
+/**
+ * What a sign-in yields. An OAuth App registered with "Expire user access
+ * tokens" hands over a token good for eight hours and a refresh token good
+ * for six months; one registered without it hands over a token that does
+ * not expire, and `expiresAt` is then null. Both are handled, so the
+ * checkbox on the registration form is not a decision anyone has to get
+ * right.
+ */
+export interface TokenGrant {
+  token: string;
+  /** When the token stops working, or null when it does not. */
+  expiresAt: number | null;
+  /** What to trade for the next token; empty when the token never expires. */
+  refreshToken: string;
+  /** When the refresh token itself stops working, or null. */
+  refreshExpiresAt: number | null;
+}
+
+function grantOf(body: TokenBody, now = Date.now()): TokenGrant {
+  return {
+    token: body.access_token ?? "",
+    expiresAt: body.expires_in ? now + body.expires_in * 1000 : null,
+    refreshToken: body.refresh_token ?? "",
+    refreshExpiresAt: body.refresh_token_expires_in ? now + body.refresh_token_expires_in * 1000 : null,
+  };
 }
 
 /** A started device flow: what to show the reader, and what to poll with. */
@@ -94,7 +126,7 @@ export async function startDeviceFlow(clientId: string, fetchImpl: Fetch = fetch
 }
 
 export type PollOutcome =
-  | { kind: "token"; token: string }
+  | { kind: "token"; grant: TokenGrant }
   | { kind: "pending"; waitMs: number }
   | { kind: "failed"; why: string };
 
@@ -104,7 +136,7 @@ export type PollOutcome =
  * not say; this is the whole of the decision, and it is pure.
  */
 export function interpretPoll(body: TokenBody, waitMs: number): PollOutcome {
-  if (body.access_token) return { kind: "token", token: body.access_token };
+  if (body.access_token) return { kind: "token", grant: grantOf(body) };
   switch (body.error) {
     case "authorization_pending":
       return { kind: "pending", waitMs };
@@ -131,7 +163,7 @@ export interface WaitOptions {
 const nap = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Poll until GitHub hands over a token, the code expires, or the wait is called off. */
-export async function waitForToken(clientId: string, start: DeviceStart, options: WaitOptions = {}): Promise<string> {
+export async function waitForToken(clientId: string, start: DeviceStart, options: WaitOptions = {}): Promise<TokenGrant> {
   const fetchImpl = options.fetchImpl ?? fetch;
   const sleep = options.sleep ?? nap;
   let waitMs = start.intervalMs;
@@ -150,10 +182,35 @@ export async function waitForToken(clientId: string, start: DeviceStart, options
       }),
     });
     const outcome = interpretPoll((await res.json()) as TokenBody, waitMs);
-    if (outcome.kind === "token") return outcome.token;
+    if (outcome.kind === "token") return outcome.grant;
     if (outcome.kind === "failed") throw new Error(outcome.why);
     waitMs = outcome.waitMs;
   }
+}
+
+/**
+ * Trade a refresh token for a fresh one. Only apps registered with
+ * expiring tokens ever need this, and the answer carries its own next
+ * refresh token: the old one is spent.
+ */
+export async function refreshGrant(clientId: string, refreshToken: string, fetchImpl: Fetch = fetch): Promise<TokenGrant> {
+  const res = await fetchImpl(TOKEN_URL, {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify({ client_id: clientId, grant_type: "refresh_token", refresh_token: refreshToken }),
+  });
+  const body = (await res.json()) as TokenBody;
+  if (!body.access_token) throw complain(body, `GitHub said ${res.status}`);
+  return grantOf(body);
+}
+
+/**
+ * Whether a grant should be traded in now. A minute of margin, so a token
+ * that would expire mid-poll is replaced before the poll rather than
+ * during it.
+ */
+export function needsRefresh(expiresAt: number | null, now = Date.now()): boolean {
+  return expiresAt !== null && now > expiresAt - 60_000;
 }
 
 /** Scopes as GitHub lists them on a response header: "repo, read:org". */
