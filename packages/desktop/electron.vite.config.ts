@@ -41,10 +41,24 @@ const proxy: Record<string, ProxyOptions> = Object.fromEntries(
   ["/prs", "/events", "/health", "/quit", "^/pr/[^/]+/[^/]+/[0-9]+/(definition|references|panel|alive|gone)"].map((path) => [path, toDaemon]),
 );
 
+/** Shipped as TypeScript source; a packaged app has no tsx to run them with. */
+const WORKSPACE = ["@deep-review/review", "@deep-review/call-graph", "@deep-review/pr", "@deep-review/slicer"];
+
+/**
+ * Packages with `"type": "module"` and no CommonJS entry. Rollup converts
+ * them on the way into the bundle; left external, requiring them from the
+ * CommonJS main or worker bundle throws ERR_REQUIRE_ESM.
+ */
+const ESM_ONLY = ["ai", "@ai-sdk/openai", "@ai-sdk/anthropic", "@ai-sdk/xai"];
+
 export default defineConfig({
   main: {
     define: { __GITHUB_CLIENT_ID__: JSON.stringify(clientId) },
-    plugins: [externalizeDepsPlugin({ exclude: ["@deep-review/review", "@deep-review/call-graph", "@deep-review/pr", "@deep-review/slicer"] })],
+    // The main bundles are CommonJS, so a dependency with no CommonJS entry
+    // cannot be left external: `require()` of it throws ERR_REQUIRE_ESM at
+    // load, which is how every build in the app died before this. The
+    // workspace packages ship as TypeScript and must be bundled too.
+    plugins: [externalizeDepsPlugin({ exclude: [...WORKSPACE, ...ESM_ONLY] })],
     build: {
       lib: { entry: { index: "./src/main.ts", buildWorker: "./src/buildWorker.ts" } },
       rollupOptions: { output: { entryFileNames: "[name].js" } },
