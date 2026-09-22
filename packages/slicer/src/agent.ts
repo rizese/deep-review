@@ -1,6 +1,5 @@
 import { anthropic } from "@ai-sdk/anthropic";
 import { openai } from "@ai-sdk/openai";
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createXai } from "@ai-sdk/xai";
 import { BuildError, ConfigError, InputError } from "@deep-review/pr";
 import { isStepCount, Output, ToolLoopAgent } from "ai";
@@ -25,27 +24,6 @@ const DEFAULT_EFFORT: ReasoningEffort = "xhigh";
  * and xAI), so the mapping lives here rather than at call sites.
  */
 function resolveModel(modelId: string, effort?: ReasoningEffort) {
-  if (isOpenRouter(modelId)) {
-    // OpenRouter speaks chat completions, not OpenAI's Responses API, so it
-    // cannot ride the branch below. Reasoning effort goes in the body under
-    // OpenRouter's own `reasoning` field; providers that do not reason
-    // ignore it.
-    const openrouter = createOpenAICompatible({
-      name: "openrouter",
-      baseURL: OPENROUTER_URL,
-      apiKey: process.env.OPENROUTER_API_KEY ?? "",
-      headers: {
-        // OpenRouter attributes traffic with these, and they are what put a
-        // name beside the spend on its dashboard.
-        "HTTP-Referer": "https://github.com/rizese/deep-review",
-        "X-Title": "Deep Review",
-      },
-    });
-    return {
-      model: openrouter(modelId.slice(OPENROUTER_PREFIX.length)),
-      providerOptions: effort ? { openrouter: { reasoning: { effort } } } : undefined,
-    };
-  }
   if (modelId.startsWith("gpt-")) {
     return {
       model: openai.responses(modelId),
@@ -75,24 +53,10 @@ function resolveModel(modelId: string, effort?: ReasoningEffort) {
 }
 
 /**
- * Route a model id through OpenRouter rather than to a provider directly by
- * prefixing it: `openrouter/anthropic/claude-sonnet-4.5`. What follows the
- * prefix is OpenRouter's own model id, passed along untouched, so anything
- * it offers is reachable without this package knowing the model exists.
- */
-export const OPENROUTER_PREFIX = "openrouter/";
-const OPENROUTER_URL = "https://openrouter.ai/api/v1";
-
-export function isOpenRouter(modelId: string): boolean {
-  return modelId.startsWith(OPENROUTER_PREFIX);
-}
-
-/**
  * The environment variables a given model id can take its API key from, for
  * CLI preflight checks — any one of them satisfies the requirement.
  */
 export function apiKeyEnvVars(modelId: string): string[] {
-  if (isOpenRouter(modelId)) return ["OPENROUTER_API_KEY"];
   if (modelId.startsWith("gpt-")) return ["OPENAI_API_KEY"];
   if (modelId.startsWith("grok-")) return ["XAI_API_KEY", "GROK_API_KEY"];
   return ["ANTHROPIC_API_KEY"];

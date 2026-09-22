@@ -49,7 +49,7 @@ const WORKSPACE = ["@deep-review/review", "@deep-review/call-graph", "@deep-revi
  * them on the way into the bundle; left external, requiring them from the
  * CommonJS main or worker bundle throws ERR_REQUIRE_ESM.
  */
-const ESM_ONLY = ["ai", "@ai-sdk/openai", "@ai-sdk/anthropic", "@ai-sdk/xai", "@ai-sdk/openai-compatible"];
+const ESM_ONLY = ["ai", "@ai-sdk/openai", "@ai-sdk/anthropic", "@ai-sdk/xai"];
 
 export default defineConfig({
   main: {

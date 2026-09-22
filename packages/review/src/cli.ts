@@ -77,9 +77,7 @@ Options:
                     $DEEP_REVIEW_PORT; a free one if that is taken)
   --max-graphs <n>  Analyze at most n slices' call graphs (default: all)
   --debug-marks     Hold Shift on the page to see why each symbol is marked as it is
-  --model <id>      Model to use for slicing (default: ${DEFAULT_MODEL}).
-                    Prefix with openrouter/ to route through OpenRouter, e.g.
-                    openrouter/anthropic/claude-sonnet-4.5
+  --model <id>      Model to use for slicing (default: ${DEFAULT_MODEL})
   --no-open         Don't open the page(s) in a browser
   --quiet           Only print the URL(s)
 
@@ -87,7 +85,6 @@ Environment:
   OPENAI_API_KEY     Required for the default model, unless --slices is given.
   ANTHROPIC_API_KEY  Required for claude-* models.
   GROK_API_KEY       Required for grok-* models.
-  OPENROUTER_API_KEY Required for openrouter/* models.
   GITHUB_TOKEN       Needed for private repos.
   DEEP_REVIEW_REPO   <owner>/<repo> a bare PR number refers to.
   DEEP_REVIEW_HOME   Where the server keeps its lockfile, log and slice JSONs,

@@ -18,7 +18,6 @@ const DEFAULT_SETTINGS: Settings = {
   openaiApiKey: "",
   anthropicApiKey: "",
   grokApiKey: "",
-  openrouterApiKey: "",
   linearApiKey: "",
   model: "",
   githubRefreshToken: "",
@@ -31,7 +30,6 @@ const ENV_KEYS: Record<keyof Omit<Settings, "openAtLogin" | "model" | "githubRef
   openaiApiKey: "OPENAI_API_KEY",
   anthropicApiKey: "ANTHROPIC_API_KEY",
   grokApiKey: "GROK_API_KEY",
-  openrouterApiKey: "OPENROUTER_API_KEY",
   linearApiKey: "LINEAR_API_KEY",
 };
 
