@@ -11,8 +11,8 @@
  * Reads packages/desktop/resources/mark-source.jpeg and writes, beside it:
  *
  *   mark.png            the mark at full size, navy on transparent
- *   trayTemplate.png    18px black-on-transparent, for the menu bar
- *   trayTemplate@2x.png 36px, the retina half of the same
+ *   trayTemplate.png    black on transparent, 18 tall, for the menu bar
+ *   trayTemplate@2x.png the retina half of the same, 36 tall
  *
  * The "Template" in those names is not decoration: Electron and AppKit
  * both read it as "tint me".
@@ -41,6 +41,9 @@ const SOURCE = path.join(RESOURCES, "mark-source.jpeg");
  */
 const BACKGROUND = 245;
 const SOLID = 90;
+
+/** How tall the menu-bar icon is. Apple's ceiling is 22; width is free. */
+const HEIGHT = 18;
 
 const CRC = (() => {
   const table = new Int32Array(256);
@@ -157,6 +160,35 @@ function keyOut({ width, height, channels, pixels }, paint) {
   return { width, height, rgba };
 }
 
+/**
+ * Crop to the artwork.
+ *
+ * The source is a mark floating in a wide white margin. Scaled whole, the
+ * shape lands on about ten of the eighteen pixels the menu bar gives it,
+ * and the detail inside it has nowhere to go. Trimming the margin first
+ * spends every pixel on the mark.
+ */
+function trim({ width, height, rgba }, edge = 10) {
+  let top = height, left = width, right = -1, bottom = -1;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (rgba[(y * width + x) * 4 + 3] <= edge) continue;
+      if (x < left) left = x;
+      if (x > right) right = x;
+      if (y < top) top = y;
+      if (y > bottom) bottom = y;
+    }
+  }
+  if (right < left || bottom < top) return { width, height, rgba };
+  const w = right - left + 1;
+  const h = bottom - top + 1;
+  const out = Buffer.alloc(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    rgba.copy(out, y * w * 4, ((top + y) * width + left) * 4, ((top + y) * width + left + w) * 4);
+  }
+  return { width: w, height: h, rgba: out };
+}
+
 const scratch = mkdtempSync(path.join(os.tmpdir(), "tray-icon-"));
 try {
   const asPng = path.join(scratch, "source.png");
@@ -169,16 +201,24 @@ try {
     return file;
   };
 
-  // The mark itself, colour intact, for anywhere that is not the menu bar.
+  // The mark itself, colour intact and untrimmed, for anywhere that is
+  // not the menu bar and has room for the margin.
   write("mark.png", keyOut(source, null));
 
-  // The menu bar's two, black so macOS can tint them. Written at full size
-  // and scaled by sips, which resamples better than anything worth writing
-  // here, and preserves the alpha.
-  const template = write("trayTemplate@2x.png", keyOut(source, [0, 0, 0]));
+  // The menu bar's two, black so macOS can tint them, and cropped to the
+  // artwork so all eighteen pixels are the mark. Written at full size and
+  // scaled by sips, which resamples better than anything worth writing
+  // here and keeps the alpha.
+  //
+  // Scaled to a height, not to a box. The menu bar constrains how tall an
+  // item may be and lets it be as wide as it likes, so fitting the longest
+  // side would throw away half the resolution of a mark this wide for no
+  // reason. At HEIGHT it comes out around 32 across, which is where the
+  // board and its channel start being legible.
+  const template = write("trayTemplate@2x.png", trim(keyOut(source, [0, 0, 0])));
   execFileSync("cp", [template, path.join(RESOURCES, "trayTemplate.png")]);
-  execFileSync("sips", ["-z", "36", "36", template], { stdio: "pipe" });
-  execFileSync("sips", ["-z", "18", "18", path.join(RESOURCES, "trayTemplate.png")], { stdio: "pipe" });
+  execFileSync("sips", ["--resampleHeight", String(HEIGHT * 2), template], { stdio: "pipe" });
+  execFileSync("sips", ["--resampleHeight", String(HEIGHT), path.join(RESOURCES, "trayTemplate.png")], { stdio: "pipe" });
 
   for (const name of ["mark.png", "trayTemplate.png", "trayTemplate@2x.png"]) {
     const file = path.join(RESOURCES, name);

@@ -104,7 +104,11 @@ pnpm reset        # clear everything and start from a first run
 The menu-bar icon is generated, not drawn by hand: `node
 scripts/make-tray-icon.mjs` reads `packages/desktop/resources/mark-source.jpeg`
 and writes the mark on transparency plus the two black-on-transparent
-`trayTemplate` files macOS tints for itself. Re-run it if the mark changes.
+`trayTemplate` files macOS tints for itself. It crops to the artwork and
+scales to a height rather than into a square, because the menu bar limits
+how tall an item is and lets it be as wide as it likes — fitting the
+longest side would throw away half the resolution of a mark this wide.
+Re-run it if the mark changes.
 
 
 `pnpm reset` exists because the state lives in two places and clearing one
