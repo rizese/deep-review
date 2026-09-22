@@ -7,18 +7,24 @@
    to Explorer.module.css with it. */
 
   .viewport {
-    --rail: 34px; --gap: 12px;
+    /* The rail is the gutter each side keeps for the back/forward strips.
+       It is held whether or not a strip is showing, so the panels do not
+       shift under the reader the moment a walk gains a step behind it. */
+    --rail: 26px; --gap: 12px; --cols: 2;
+    --panel-w: calc((100cqw - 2 * var(--rail) - (var(--cols) - 1) * var(--gap)) / var(--cols));
     position: relative; overflow: hidden; container-type: inline-size;
     height: calc(100vh - 130px);
   }
+  /* One panel across instead of two, for a slice standing on its own. */
+  .viewport.wide { --cols: 1; }
   .track {
     display: flex; gap: var(--gap); height: 100%; width: max-content;
-    transform: translateX(calc(var(--rail) - var(--pos, 0) * ((100cqw - 2 * var(--rail) - var(--gap)) / 2 + var(--gap))));
+    transform: translateX(calc(var(--rail) - var(--pos, 0) * (var(--panel-w) + var(--gap))));
     transition: transform 0.4s cubic-bezier(0.32, 0.72, 0, 1);
   }
   .track.no-anim { transition: none; }
   .panel {
-    flex: none; width: calc((100cqw - 2 * var(--rail) - var(--gap)) / 2);
+    flex: none; width: var(--panel-w);
     height: 100%; overflow: auto; box-sizing: border-box;
     position: relative; /* the callers menu is placed within the pane */
     border: 1px solid var(--line-c); border-radius: 8px; padding: 0.7rem 0.9rem;
@@ -48,6 +54,17 @@
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .rail:hover { background: var(--accent-soft); border-color: var(--accent); }
+  /* Offered only when one panel is alone in the track, which is the only
+     time there is empty space for it to take. */
+  .widen {
+    position: absolute; top: 0.5rem; right: calc(var(--rail) + 0.5rem); z-index: 3;
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 1.8rem; height: 1.8rem; border-radius: 50%; cursor: pointer;
+    border: 1px solid var(--line-c); background: var(--panel); color: var(--ink-soft);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  }
+  .widen:hover { color: var(--ink); border-color: var(--accent); background: var(--accent-soft); }
+  .widen svg { width: 0.95rem; height: 0.95rem; stroke-width: 1.8; }
   .rail-left { left: 0; }
   .rail-right { right: 0; }
   .viewport.can-back .rail-left { display: flex; }
@@ -86,7 +103,7 @@
     flex: 1; min-height: 0;
     display: grid; grid-template-columns: 240px 1fr; grid-template-rows: minmax(0, 1fr);
   }
-  .main { padding: 0.3rem 1rem 1rem; min-width: 0; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); }
+  .main { padding: 0.3rem 0.5rem 1rem; min-width: 0; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); }
   .stage { position: relative; overflow: hidden; grid-row: 1; height: 100%; min-height: 0; }
   .deck {
     display: flex; flex-direction: column; height: 100%;

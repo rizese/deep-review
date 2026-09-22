@@ -1,3 +1,4 @@
+import { Maximize2, Minimize2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type JSX, type MouseEvent } from "react";
 import { flushSync } from "react-dom";
 import type { CallPathResult, FileIndex, PathNode, SliceInput } from "../../lib/callGraph.js";
@@ -69,6 +70,10 @@ export function Track(props: TrackProps): JSX.Element {
   const trackRef = useRef<HTMLDivElement>(null);
   const [ids, setIds] = useState<string[]>(["__slice__"]);
   const [pos, setPos] = useState(0);
+  // One panel across. Only offered while a panel is alone in the track,
+  // and dropped the moment a walk puts something beside it, so the two
+  // never disagree about how wide a panel is.
+  const [wide, setWide] = useState(false);
   // True right after a walk up *replaces* whoever sits at the pin — a fresh,
   // un-drilled caller with no accumulated depth behind it.
   const [freshCaller, setFreshCaller] = useState(false);
@@ -401,14 +406,33 @@ export function Track(props: TrackProps): JSX.Element {
   // waypoint. Once a walk down has happened since, it is genuine depth.
   const behind = pos > 0 && (nodeAt(pos - 1) !== "__slice__" || !freshCaller);
   const forward = ids.length > pos + 2;
+  const alone = ids.length === 1;
+  useEffect(() => {
+    if (!alone) setWide(false);
+  }, [alone]);
   const seen = new Map<string, number>();
 
   return (
     <div
-      className={`viewport${behind ? " can-back" : ""}${forward ? " can-fwd" : ""}`}
+      className={`viewport${behind ? " can-back" : ""}${forward ? " can-fwd" : ""}${alone && wide ? " wide" : ""}`}
       ref={rootRef}
       onClick={click}
     >
+      {alone && (
+        <button
+          className="widen"
+          type="button"
+          title={wide ? "Show it half width" : "Widen it to the whole view"}
+          aria-label={wide ? "Show it half width" : "Widen it to the whole view"}
+          aria-pressed={wide}
+          onClick={(e) => {
+            e.stopPropagation();
+            setWide(!wide);
+          }}
+        >
+          {wide ? <Minimize2 aria-hidden="true" /> : <Maximize2 aria-hidden="true" />}
+        </button>
+      )}
       <button className="rail rail-left">{behind ? `◀ ${nameOf(ids[pos - 1]) ?? "back"}` : ""}</button>
       <button className="rail rail-right">{forward ? `${nameOf(ids[pos + 2]) ?? "forward"} ▶` : ""}</button>
       <div className="track" ref={trackRef} style={{ ["--pos" as string]: String(pos) }}>
