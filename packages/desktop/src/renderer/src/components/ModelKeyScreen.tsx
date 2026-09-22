@@ -102,11 +102,7 @@ export function ModelKeyScreen({ status, onDone }: { status: ModelStatus; onDone
       label="Add a model key"
       title="Add your key"
       note={note}
-      foot={
-        <>
-          Stored encrypted by the OS keychain, and read as <code>{provider.envVar}</code>.
-        </>
-      }
+      foot="Stored encrypted by the OS keychain. You can edit your keys later."
     >
       {status.providers.length > 1 && (
         <Segmented
