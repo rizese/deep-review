@@ -1,24 +1,20 @@
 import { SiGithub } from "@icons-pack/react-simple-icons";
 import type { JSX } from "react";
 import { useGithubAuth } from "../lib/useGithubAuth.js";
+import { FirstRun } from "./FirstRun.js";
 import { SignInWays } from "./SignInWays.js";
 import styles from "./SignInScreen.module.css";
 
 /**
- * What the index is before there is a token: not an empty list with a
- * banner over it, but the one thing there is to do, in the middle of the
- * window. Signing in happens here — the button starts the device flow
- * rather than sending anyone to a settings page to find it.
+ * The first step of getting started: an account to read PRs from. Signing
+ * in happens here — the button starts the device flow rather than sending
+ * anyone to a settings page to find it.
  */
 export function SignInScreen(): JSX.Element {
   const auth = useGithubAuth();
 
   return (
-    <main className={styles.screen} aria-label="Sign in">
-      <span className={styles.mark} aria-hidden="true">
-        <SiGithub />
-      </span>
-      <h1 className={styles.title}>Sign in to GitHub</h1>
+    <FirstRun label="Sign in" mark={<SiGithub />} title="Sign in to GitHub" note={auth.note}>
       <SignInWays
         auth={auth}
         wide
@@ -30,14 +26,6 @@ export function SignInScreen(): JSX.Element {
           </p>
         }
       />
-      {auth.note && (
-        <div
-          className={styles.note}
-          data-bad={auth.note.bad ? "true" : "false"}
-        >
-          {auth.note.text}
-        </div>
-      )}
-    </main>
+    </FirstRun>
   );
 }

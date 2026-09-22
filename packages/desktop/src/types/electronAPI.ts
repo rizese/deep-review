@@ -55,6 +55,15 @@ export interface GithubIdentity {
   scopes: string[];
 }
 
+/** The model the slicer will use, and whether its key is in place. */
+export interface ModelStatus {
+  /** The model id, whether chosen in Settings or the slicer's default. */
+  model: string;
+  /** The environment variables it takes its key from; any one will do. */
+  envVars: string[];
+  hasKey: boolean;
+}
+
 /** What to show the reader while the browser half of signing in happens. */
 export interface DevicePrompt {
   userCode: string;
@@ -120,6 +129,8 @@ export interface AppAPI {
   openExternal: (url: string) => Promise<void>;
   /** Where the server lives and what it holds, for the settings page's status line. */
   serverInfo: () => Promise<Result<{ url: string; stateDir: string; watching: boolean; lastPollAt: number | null }>>;
+  /** Which model will do the slicing, and whether it can. */
+  model: () => Promise<Result<ModelStatus>>;
   /** The shell wants a page shown — a notification was clicked, the tray asked for Settings. Returns the way to stop listening. */
   onNavigate: (callback: (path: string) => void) => () => void;
   /** The reader opened a PR's page: it no longer counts on the Dock badge. */

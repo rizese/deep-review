@@ -3,6 +3,7 @@ import { SiGithub } from "@icons-pack/react-simple-icons";
 import { Trash2 } from "lucide-react";
 import type { MouseEvent } from "react";
 import { Button } from "../components/Button.js";
+import { ModelKeyScreen } from "../components/ModelKeyScreen.js";
 import { SignInScreen } from "../components/SignInScreen.js";
 import { SizeBar } from "../components/SizeBar.js";
 import { addPr, forgetPr, parseKey, type PrView } from "../lib/api.js";
@@ -10,6 +11,7 @@ import { usePageReady } from "../components/PageFade.js";
 import { go } from "../lib/route.js";
 import { useHeldPrs } from "../lib/usePrs.js";
 import { useStored } from "../lib/useStored.js";
+import { useModelStatus } from "../lib/useModelStatus.js";
 import { setupGap, useWatchStatus } from "../lib/useWatchStatus.js";
 import styles from "./Index.module.css";
 
@@ -154,9 +156,12 @@ export function Index(): JSX.Element {
   // In a browser there is no watcher to wait on, so the terminal is the
   // only way a PR gets here; in the app it is the other way round.
   const desktop = typeof window !== "undefined" && Boolean(window.electronAPI);
-  // Before there is a token there is nothing to list and one thing to do,
-  // so that one thing is the whole page: no tabs, no empty list under it.
+  const model = useModelStatus();
+  // Getting started is two steps, and each is the whole page while it
+  // lasts: an account to read PRs from, then a model to read them with.
+  // Neither is a banner over a list that cannot fill yet.
   const needsSignIn = gap === "token";
+  const needsKey = !needsSignIn && model.status !== null && !model.status.hasKey;
   const [tabStored, setTab] = useStored("deep-review.tab", "review");
   const tab = tabStored === "authored" ? "authored" : "review";
   const [hideStored, setHide] = useStored("deep-review.hideApproved", "false");
@@ -173,6 +178,7 @@ export function Index(): JSX.Element {
   const hidden = onTab.length - shown.length;
 
   if (needsSignIn) return <SignInScreen />;
+  if (needsKey && model.status) return <ModelKeyScreen status={model.status} onDone={model.refresh} />;
 
   return (
     <>

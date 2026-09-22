@@ -1,0 +1,16 @@
+/* The second step: a key for the model that reads the diffs. */
+.form { display: flex; gap: 0.5rem; width: 100%; max-width: 30rem; }
+.input {
+  flex: 1; min-width: 0; padding: 0.38rem 0.9rem; border-radius: 999px;
+  border: 1px solid var(--glass-edge); background: var(--panel); color: var(--ink);
+  font-family: var(--mono); font-size: 0.82rem;
+}
+.input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.other { display: flex; align-items: center; gap: 0.5rem; }
+.otherLabel { color: var(--ink-faint); font-size: 0.78rem; }
+.model {
+  width: 14rem; padding: 0.25rem 0.75rem; border-radius: 999px;
+  border: 1px solid var(--glass-edge); background: var(--panel); color: var(--ink);
+  font-family: var(--mono); font-size: 0.78rem;
+}
+.model:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
