@@ -101,6 +101,12 @@ pnpm build:mac    # build packages/desktop/dist/*.dmg (unsigned)
 pnpm reset        # clear everything and start from a first run
 ```
 
+The menu-bar icon is generated, not drawn by hand: `node
+scripts/make-tray-icon.mjs` reads `packages/desktop/resources/mark-source.jpeg`
+and writes the mark on transparency plus the two black-on-transparent
+`trayTemplate` files macOS tints for itself. Re-run it if the mark changes.
+
+
 `pnpm reset` exists because the state lives in two places and clearing one
 without the other leaves them disagreeing: delete the server's PR store on
 its own and the watcher still believes it handed those PRs over, so it

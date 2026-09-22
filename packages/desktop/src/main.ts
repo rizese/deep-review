@@ -126,8 +126,12 @@ function watchForNotifications(nav: NavServer): void {
 }
 
 function buildTray(): void {
-  const icon = nativeImage.createFromPath(path.join(__dirname, "../../resources/icon.png")).resize({ width: 18, height: 18 });
-  icon.setTemplateImage(false);
+  // A template image: black shape plus alpha, which macOS tints for the
+  // light bar, the dark bar and the highlighted state. A coloured icon
+  // there looks wrong in at least one of those and cannot be corrected
+  // from here. The @2x file beside it is picked up by name.
+  const icon = nativeImage.createFromPath(path.join(__dirname, "../../resources/trayTemplate.png"));
+  icon.setTemplateImage(true);
   tray = new Tray(icon);
   tray.setToolTip("Deep Review");
   const refresh = (): void => {
