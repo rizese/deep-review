@@ -1,13 +1,15 @@
 /* The second step: a key for the model that reads the diffs, then the
    model itself, chosen from what that key can actually reach. */
-.providers { display: flex; gap: 0.4rem; flex-wrap: wrap; justify-content: center; }
-.form { display: flex; gap: 0.5rem; width: 100%; max-width: 30rem; }
+/* The key, then the way on, stacked — not a field with a button glued to
+   its side. */
+.form { display: flex; flex-direction: column; align-items: center; gap: 0.6rem; width: 100%; max-width: 26rem; }
 .input {
-  flex: 1; min-width: 0; padding: 0.38rem 0.9rem; border-radius: 999px;
+  width: 100%; box-sizing: border-box; padding: 0.45rem 1rem; border-radius: 999px;
   border: 1px solid var(--glass-edge); background: var(--panel); color: var(--ink);
   font-family: var(--mono); font-size: 0.82rem;
 }
 .input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.continue { min-width: 9rem; }
 
 /* The picker: what this key can reach, newest first. */
 .models { display: flex; flex-direction: column; gap: 0.3rem; width: 100%; max-width: 30rem; max-height: 44vh; overflow-y: auto; padding: 0.15rem; }

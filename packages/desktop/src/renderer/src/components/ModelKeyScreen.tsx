@@ -2,7 +2,15 @@ import { useState, type FormEvent, type JSX } from "react";
 import type { ModelChoice, ModelStatus, ProviderInfo } from "../../../types/electronAPI.js";
 import { Button } from "./Button.js";
 import { FirstRun, type Note } from "./FirstRun.js";
+import { Segmented } from "./Segmented.js";
 import styles from "./ModelKeyScreen.module.css";
+
+/** What each provider's keys look like, so the box shows the right shape. */
+const PLACEHOLDER: Record<string, string> = {
+  openai: "sk-…",
+  anthropic: "sk-ant-…",
+  xai: "xai-…",
+};
 
 function reason(error: unknown, fallback: string): string {
   if (error instanceof Error) return error.message;
@@ -92,7 +100,7 @@ export function ModelKeyScreen({ status, onDone }: { status: ModelStatus; onDone
   return (
     <FirstRun
       label="Add a model key"
-      title={`Add your ${provider.label} key`}
+      title="Add your key"
       note={note}
       foot={
         <>
@@ -101,36 +109,32 @@ export function ModelKeyScreen({ status, onDone }: { status: ModelStatus; onDone
       }
     >
       {status.providers.length > 1 && (
-        <div className={styles.providers} role="group" aria-label="Provider">
-          {status.providers.map((p) => (
-            <Button
-              key={p.id}
-              size="sm"
-              aria-pressed={p.id === provider.id}
-              disabled={busy}
-              onClick={() => {
-                setProvider(p);
-                setNote(null);
-              }}
-            >
-              {p.label}
-            </Button>
-          ))}
-        </div>
+        <Segmented
+          label="Provider"
+          options={status.providers.map((p) => ({ id: p.id, label: p.label }))}
+          value={provider.id}
+          disabled={busy}
+          onChange={(id) => {
+            const picked = status.providers.find((p) => p.id === id);
+            if (!picked) return;
+            setProvider(picked);
+            setNote(null);
+          }}
+        />
       )}
       <form className={styles.form} aria-label="Model key" onSubmit={(e) => void saveKey(e)}>
         <input
           className={styles.input}
           type="password"
           aria-label={`${provider.label} API key`}
-          placeholder="sk-…"
+          placeholder={PLACEHOLDER[provider.id] ?? ""}
           autoComplete="off"
           spellCheck={false}
           autoFocus
           value={key}
           onChange={(e) => setKey(e.target.value)}
         />
-        <Button type="submit" disabled={busy || !key.trim()}>
+        <Button className={styles.continue} type="submit" disabled={busy || !key.trim()}>
           {busy ? "Checking…" : "Continue"}
         </Button>
       </form>
