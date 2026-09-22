@@ -1,4 +1,3 @@
-import { KeyRound } from "lucide-react";
 import { useState, type FormEvent, type JSX } from "react";
 import type { ModelStatus } from "../../../types/electronAPI.js";
 import { Button } from "./Button.js";
@@ -78,7 +77,6 @@ export function ModelKeyScreen({ status, onDone }: { status: ModelStatus; onDone
   return (
     <FirstRun
       label="Add a model key"
-      mark={<KeyRound />}
       title={`Add your ${provider} key`}
       note={note}
       blurb={

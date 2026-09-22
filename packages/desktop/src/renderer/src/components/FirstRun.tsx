@@ -24,7 +24,7 @@ export function FirstRun({
 }: {
   /** What the step is, for anything not looking at the screen. */
   label: string;
-  mark: ReactNode;
+  mark?: ReactNode;
   title: string;
   /** The sentence under the title saying what this step is for. */
   blurb?: ReactNode;
@@ -35,9 +35,11 @@ export function FirstRun({
 }): JSX.Element {
   return (
     <main className={styles.screen} aria-label={label}>
-      <span className={styles.mark} aria-hidden="true">
-        {mark}
-      </span>
+      {mark && (
+        <span className={styles.mark} aria-hidden="true">
+          {mark}
+        </span>
+      )}
       <h1 className={styles.title}>{title}</h1>
       {blurb && <p className={styles.blurb}>{blurb}</p>}
       {children}
