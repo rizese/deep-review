@@ -79,11 +79,6 @@ export function ModelKeyScreen({ status, onDone }: { status: ModelStatus; onDone
       label="Add a model key"
       title={`Add your ${provider} key`}
       note={note}
-      blurb={
-        <>
-          Deep Review reads each diff with a model to cut it into slices. <code>{status.model}</code> does that here, and it needs a key.
-        </>
-      }
       foot={
         <>
           Stored encrypted by the OS keychain, and read as <code>{wanted}</code>.

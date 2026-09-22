@@ -17,7 +17,6 @@ export function FirstRun({
   label,
   mark,
   title,
-  blurb,
   children,
   foot,
   note,
@@ -26,8 +25,6 @@ export function FirstRun({
   label: string;
   mark?: ReactNode;
   title: string;
-  /** The sentence under the title saying what this step is for. */
-  blurb?: ReactNode;
   children: ReactNode;
   /** The quiet line under the controls. */
   foot?: ReactNode;
@@ -41,7 +38,6 @@ export function FirstRun({
         </span>
       )}
       <h1 className={styles.title}>{title}</h1>
-      {blurb && <p className={styles.blurb}>{blurb}</p>}
       {children}
       {foot && <p className={styles.foot}>{foot}</p>}
       {note && (
