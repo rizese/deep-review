@@ -35,6 +35,7 @@ const watch: WatchAPI = {
 const app: AppAPI = {
   version: () => ipcRenderer.invoke("app:version"),
   model: () => ipcRenderer.invoke("app:model"),
+  models: (provider: string) => ipcRenderer.invoke("app:models", provider),
   openExternal: (url: string) => ipcRenderer.invoke("app:open-external", url),
   serverInfo: () => ipcRenderer.invoke("app:server-info"),
   onNavigate: (callback) => {

@@ -55,13 +55,31 @@ export interface GithubIdentity {
   scopes: string[];
 }
 
+/** One place a model can come from, and where its key is kept. */
+export interface ProviderInfo {
+  id: string;
+  label: string;
+  field: "openaiApiKey" | "anthropicApiKey" | "grokApiKey";
+  envVar: string;
+}
+
+/** One model a key can reach. */
+export interface ModelChoice {
+  id: string;
+  label: string;
+}
+
 /** The model the slicer will use, and whether its key is in place. */
 export interface ModelStatus {
   /** The model id, whether chosen in Settings or the slicer's default. */
   model: string;
+  /** Which provider that id would be sent to. */
+  provider: string;
   /** The environment variables it takes its key from; any one will do. */
   envVars: string[];
   hasKey: boolean;
+  /** Every provider a key could be given for. */
+  providers: ProviderInfo[];
 }
 
 /** What to show the reader while the browser half of signing in happens. */
@@ -131,6 +149,8 @@ export interface AppAPI {
   serverInfo: () => Promise<Result<{ url: string; stateDir: string; watching: boolean; lastPollAt: number | null }>>;
   /** Which model will do the slicing, and whether it can. */
   model: () => Promise<Result<ModelStatus>>;
+  /** What the stored key for this provider can reach. Doubles as a check that the key works. */
+  models: (provider: string) => Promise<Result<ModelChoice[]>>;
   /** The shell wants a page shown — a notification was clicked, the tray asked for Settings. Returns the way to stop listening. */
   onNavigate: (callback: (path: string) => void) => () => void;
   /** The reader opened a PR's page: it no longer counts on the Dock badge. */

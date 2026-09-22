@@ -7,6 +7,7 @@ import { stateDir } from "@deep-review/review/paths";
 import { readWatchConfig, writeWatchConfig } from "@deep-review/review/watchConfig";
 import { parseSearchInput, searchPrs, type PrSearch } from "@deep-review/pr";
 import { apiKeyEnvVars, DEFAULT_MODEL, hasApiKeyForModel } from "@deep-review/slicer";
+import { listModels, providerForModel, providerOf, providers } from "./main/models.js";
 import { readWatcherState } from "@deep-review/review/watcher";
 import { agentInstalled, uninstallAgent } from "@deep-review/review/launchAgent";
 import type { PrView } from "@deep-review/review/api";
@@ -15,7 +16,17 @@ import { startBadge, type Badge } from "./main/badge.js";
 import { clientIdOf, identityOf, needsRefresh, refreshGrant, startDeviceFlow, waitForToken, type TokenGrant } from "./main/githubAuth.js";
 import { applyToEnvironment, readSettings, writeSettings } from "./main/settings.js";
 import { hasGithubToken, startWatchLoop, type WatchLoop } from "./main/watch.js";
-import type { DevicePrompt, GithubIdentity, ModelStatus, Result, SearchConfig, SearchPreview, Settings, WatchStatus } from "./types/electronAPI.js";
+import type {
+  DevicePrompt,
+  GithubIdentity,
+  ModelChoice,
+  ModelStatus,
+  Result,
+  SearchConfig,
+  SearchPreview,
+  Settings,
+  WatchStatus,
+} from "./types/electronAPI.js";
 
 /**
  * Deep Review as an app. The main process is the review server — the same
@@ -391,7 +402,25 @@ function registerIpc(): void {
       // The slicer owns which key a model id needs; asking it means this
       // never has to learn a fourth provider's name.
       const model = (await readSettings()).model || DEFAULT_MODEL;
-      return ok({ model, envVars: apiKeyEnvVars(model), hasKey: hasApiKeyForModel(model) });
+      return ok({
+        model,
+        provider: providerForModel(model),
+        envVars: apiKeyEnvVars(model),
+        hasKey: hasApiKeyForModel(model),
+        providers: providers(),
+      });
+    } catch (error) {
+      return failed(error);
+    }
+  });
+  ipcMain.handle("app:models", async (_event, id: unknown): Promise<Result<ModelChoice[]>> => {
+    try {
+      const provider = providerOf(String(id));
+      if (!provider) throw new Error(`no such provider: ${String(id)}`);
+      const settings = await readSettings();
+      const key = settings[provider.field] || process.env[provider.envVar] || "";
+      if (!key) throw new Error(`no ${provider.label} key is set`);
+      return ok(await listModels(provider.id, key));
     } catch (error) {
       return failed(error);
     }

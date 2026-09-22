@@ -1,23 +1,8 @@
 import { useState, type FormEvent, type JSX } from "react";
-import type { ModelStatus } from "../../../types/electronAPI.js";
+import type { ModelChoice, ModelStatus, ProviderInfo } from "../../../types/electronAPI.js";
 import { Button } from "./Button.js";
 import { FirstRun, type Note } from "./FirstRun.js";
 import styles from "./ModelKeyScreen.module.css";
-
-/** The settings field a given environment variable is stored in. */
-const FIELD: Record<string, "openaiApiKey" | "anthropicApiKey" | "grokApiKey"> = {
-  OPENAI_API_KEY: "openaiApiKey",
-  ANTHROPIC_API_KEY: "anthropicApiKey",
-  XAI_API_KEY: "grokApiKey",
-  GROK_API_KEY: "grokApiKey",
-};
-
-const PROVIDER: Record<string, string> = {
-  OPENAI_API_KEY: "OpenAI",
-  ANTHROPIC_API_KEY: "Anthropic",
-  XAI_API_KEY: "xAI",
-  GROK_API_KEY: "xAI",
-};
 
 function reason(error: unknown, fallback: string): string {
   if (error instanceof Error) return error.message;
@@ -26,70 +11,118 @@ function reason(error: unknown, fallback: string): string {
 
 /**
  * The second step of getting started: a key for the model that reads the
- * diffs.
+ * diffs, and then the model.
  *
- * Which key depends on the model, and the model is a setting, so the step
- * asks for whichever one the current model wants and lets that model be
- * changed here — otherwise someone holding an Anthropic key would be
- * looking at a box asking for an OpenAI one with no way out.
+ * The model is not typed in, and the default is not a promise: the key is
+ * saved, the provider is asked what that key can reach, and the answer is
+ * the list. That makes the list current without anyone shipping a release
+ * to chase model names, and a provider that answers at all has proved the
+ * key works — which nothing else checked.
  */
 export function ModelKeyScreen({ status, onDone }: { status: ModelStatus; onDone: () => Promise<void> }): JSX.Element {
+  const [provider, setProvider] = useState<ProviderInfo>(
+    () => status.providers.find((p) => p.id === status.provider) ?? status.providers[0]!,
+  );
   const [key, setKey] = useState("");
-  const [model, setModel] = useState(status.model);
+  const [models, setModels] = useState<ModelChoice[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<Note | null>(null);
 
-  const wanted = status.envVars[0] ?? "OPENAI_API_KEY";
-  const provider = PROVIDER[wanted] ?? "the model's";
-  const field = FIELD[wanted] ?? "openaiApiKey";
+  const api = typeof window === "undefined" ? undefined : window.electronAPI;
 
-  const save = async (e: FormEvent): Promise<void> => {
+  const saveKey = async (e: FormEvent): Promise<void> => {
     e.preventDefault();
+    if (!api) return;
     setBusy(true);
     setNote(null);
     try {
-      const result = await window.electronAPI?.settings.set({ [field]: key.trim(), model: model.trim() });
-      if (result && !result.success) throw new Error(result.error ?? "could not save");
-      await onDone();
+      const saved = await api.settings.set({ [provider.field]: key.trim() });
+      if (!saved.success) throw new Error(saved.error ?? "could not save the key");
+      const listed = await api.app.models(provider.id);
+      if (!listed.success || !listed.data) throw new Error(listed.error ?? "could not ask what that key can reach");
+      setModels(listed.data);
     } catch (error) {
-      setNote({ text: reason(error, "could not save"), bad: true });
+      setNote({ text: reason(error, "could not save the key"), bad: true });
     } finally {
       setBusy(false);
     }
   };
 
-  // Changing the model changes which key is wanted, so it is saved on its
-  // own and the step comes back asking for the other one.
-  const useModel = async (): Promise<void> => {
-    if (model.trim() === status.model) return;
+  const choose = async (id: string): Promise<void> => {
+    if (!api) return;
     setBusy(true);
     setNote(null);
     try {
-      await window.electronAPI?.settings.set({ model: model.trim() });
+      const saved = await api.settings.set({ model: id });
+      if (!saved.success) throw new Error(saved.error ?? "could not save the model");
       await onDone();
     } catch (error) {
-      setNote({ text: reason(error, "could not save"), bad: true });
-    } finally {
+      setNote({ text: reason(error, "could not save the model"), bad: true });
       setBusy(false);
     }
   };
+
+  if (models) {
+    return (
+      <FirstRun
+        label="Choose a model"
+        title="Which model should read your diffs?"
+        note={note}
+        foot={`What your ${provider.label} key can reach, newest first.`}
+      >
+        <div className={styles.models} role="group" aria-label="Models">
+          {models.map((model) => (
+            <button
+              key={model.id}
+              className={styles.model}
+              type="button"
+              aria-pressed={model.id === status.model}
+              disabled={busy}
+              onClick={() => void choose(model.id)}
+            >
+              <span>{model.label}</span>
+              {model.label !== model.id && <span className={styles.modelId}>{model.id}</span>}
+            </button>
+          ))}
+        </div>
+      </FirstRun>
+    );
+  }
 
   return (
     <FirstRun
       label="Add a model key"
-      title={`Add your ${provider} key`}
+      title={`Add your ${provider.label} key`}
       note={note}
       foot={
         <>
-          Stored encrypted by the OS keychain, and read as <code>{wanted}</code>.
+          Stored encrypted by the OS keychain, and read as <code>{provider.envVar}</code>.
         </>
       }
     >
-      <form className={styles.form} aria-label="Model key" onSubmit={(e) => void save(e)}>
+      {status.providers.length > 1 && (
+        <div className={styles.providers} role="group" aria-label="Provider">
+          {status.providers.map((p) => (
+            <Button
+              key={p.id}
+              size="sm"
+              aria-pressed={p.id === provider.id}
+              disabled={busy}
+              onClick={() => {
+                setProvider(p);
+                setNote(null);
+              }}
+            >
+              {p.label}
+            </Button>
+          ))}
+        </div>
+      )}
+      <form className={styles.form} aria-label="Model key" onSubmit={(e) => void saveKey(e)}>
         <input
           className={styles.input}
           type="password"
-          aria-label={`${provider} API key`}
+          aria-label={`${provider.label} API key`}
           placeholder="sk-…"
           autoComplete="off"
           spellCheck={false}
@@ -98,24 +131,9 @@ export function ModelKeyScreen({ status, onDone }: { status: ModelStatus; onDone
           onChange={(e) => setKey(e.target.value)}
         />
         <Button type="submit" disabled={busy || !key.trim()}>
-          Save
+          {busy ? "Checking…" : "Continue"}
         </Button>
       </form>
-      <div className={styles.other}>
-        <label className={styles.otherLabel} htmlFor="first-run-model">
-          Model
-        </label>
-        <input
-          className={styles.model}
-          id="first-run-model"
-          type="text"
-          spellCheck={false}
-          autoComplete="off"
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
-          onBlur={() => void useModel()}
-        />
-      </div>
     </FirstRun>
   );
 }
