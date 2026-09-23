@@ -1,13 +1,17 @@
 export { parsePrTarget, parsePrUrl, prUrl, type PrRef } from "./prUrl.js";
 export {
   fetchPrInfo,
-  listWatchedPrs,
-  namesRepo,
+  searchPrs,
+  isBounded,
+  checkSearch,
+  parseSearchInput,
+  DEFAULT_REVIEW_SEARCHES,
+  DEFAULT_AUTHORED_SEARCHES,
+  PER_SEARCH,
   type PrInfo,
   type PrRole,
   type AssignedPr,
-  type AssignedPrQuery,
-  type WatchedPrQuery,
+  type PrSearch,
 } from "./github.js";
 export {
   parseUnifiedDiff,

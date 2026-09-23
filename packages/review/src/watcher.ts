@@ -20,7 +20,7 @@
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { fetchPrInfo, listWatchedPrs, type AssignedPr, type PrRef } from "@deep-review/pr";
+import { fetchPrInfo, searchPrs, type AssignedPr, type PrRef, type PrSearch } from "@deep-review/pr";
 import {
   addPrToServer,
   ensureServer,
@@ -30,7 +30,7 @@ import {
   updatePrFacts,
 } from "./daemon.js";
 import { prKey, type AddOptions, type PrFacts, type PrKey, type PrView } from "./registry.js";
-import { readWatchConfig, watchConfigFile, type WatchedRepo } from "./watchConfig.js";
+import { readWatchConfig, watchConfigFile } from "./watchConfig.js";
 
 export function watcherStateFile(): string {
   return path.join(stateDir(), "watcher.json");
@@ -209,11 +209,11 @@ export async function planCleanup(
 
 export interface PollDeps {
   /**
-   * The PRs that concern you right now in one configured repo: waiting on
-   * your review, and opened by you. Called once per repo in `watch.json`,
-   * and for no other: a repo the file does not name is never asked about.
+   * The PRs that concern you right now: waiting on your review, and opened
+   * by you. Asked for with exactly the searches `watch.json` holds, in one
+   * call; a search the file does not hold is never run.
    */
-  list?: ((repo: WatchedRepo) => Promise<AssignedPr[]>) | undefined;
+  search?: ((searches: PrSearch[]) => Promise<AssignedPr[]>) | undefined;
   /**
    * Refresh what the server knows about a PR it already holds — approval,
    * above all, which changes after the page is built. Defaults to asking a
@@ -252,27 +252,21 @@ export interface PollDeps {
  */
 export async function pollOnce(deps: PollDeps = {}): Promise<WatcherState> {
   const log = deps.onProgress ?? (() => {});
-  const list =
-    deps.list ??
-    ((repo: WatchedRepo) =>
-      listWatchedPrs({ repo: repo.repo, query: repo.query, authoredQuery: repo.authoredQuery }));
+  const search = deps.search ?? ((searches: PrSearch[]) => searchPrs(searches, { onNote: log }));
   const before = readWatcherState();
 
   const config = readWatchConfig();
   for (const problem of config.problems) log(`${watchConfigFile()}: ${problem}`);
-  if (config.repos.length === 0) {
-    log(`Nothing to watch: ${watchConfigFile()} names no repos.`);
+  if (config.migrated) {
+    log(`${watchConfigFile()} still lists repos; they are being read as searches. Saving from the app rewrites it.`);
   }
 
-  // One query per configured repo, and all or nothing: a repo whose query
-  // failed would otherwise look emptied, and its PRs would fall out of
-  // `seen` for a GitHub hiccup rather than for anything that happened.
+  // Every search in one call, and all or nothing: a poll that half failed
+  // would look like PRs had gone away, and they would fall out of `seen`
+  // for a GitHub hiccup rather than for anything that happened.
   let assigned: AssignedPr[];
   try {
-    assigned = [];
-    for (const repo of config.repos) {
-      assigned.push(...(await list(repo)));
-    }
+    assigned = await search(config.searches);
   } catch (error) {
     const why = error instanceof Error ? error.message : String(error);
     log(`poll failed: ${why}`);
@@ -282,15 +276,13 @@ export async function pollOnce(deps: PollDeps = {}): Promise<WatcherState> {
   }
 
   const { dispatch, seen } = planPoll(assigned, before.seen);
-  if (config.repos.length > 0) {
-    const repos = config.repos.length;
-    const waiting = assigned.filter((pr) => pr.role !== "authored").length;
-    const mine = assigned.length - waiting;
-    log(
-      `${waiting} PR${waiting === 1 ? "" : "s"} waiting on you and ${mine} of yours ` +
-        `across ${repos} repo${repos === 1 ? "" : "s"}; ${dispatch.length} new.`,
-    );
-  }
+  const waiting = assigned.filter((pr) => pr.role !== "authored").length;
+  const mine = assigned.length - waiting;
+  const searches = config.searches.length;
+  log(
+    `${waiting} PR${waiting === 1 ? "" : "s"} waiting on you and ${mine} of yours ` +
+      `from ${searches} search${searches === 1 ? "" : "es"}; ${dispatch.length} new.`,
+  );
 
   const options: AddOptions = { ...deps.options };
   const add =

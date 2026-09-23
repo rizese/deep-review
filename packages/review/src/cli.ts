@@ -54,17 +54,18 @@ into the explorer when ready.
 Commands:
   <pr>...           Add these PRs to the server (starting it if needed).
   watch             Review PRs as they come to wait on you, and follow the ones
-                    you opened, in the repos named in ~/.deep-review/watch.json,
-                    each with its own queries.
-                    --repo <owner/repo> adds one to the file. Turns itself on at
-                    login and after a reboot; --off stops it.
+                    you opened, using the GitHub searches in
+                    ~/.deep-review/watch.json — by default the PRs assigned to
+                    you, the ones whose review you were asked for, and yours.
+                    --repo <owner/repo> narrows them to one repo. Turns itself
+                    on at login and after a reboot; --off stops it.
   serve             Run the server in the foreground.
   status            What is being watched and what the server holds.
   stop              Stop watching, and stop the server.
 
 Options:
   --repo <owner/repo>  Repo a bare PR number refers to (default: $DEEP_REVIEW_REPO);
-                    with watch, a repo to add to the watch list
+                    with watch, narrows the searches to that repo
   --slices <file>   Reuse a saved slice JSON instead of running the agent
                     (every run's JSON is kept under ~/.deep-review/slices)
   --wait            Stay attached until the added PRs are built
@@ -183,28 +184,23 @@ async function main(): Promise<void> {
       return;
     }
 
-    // --repo here is an addition to the file, not a scope for this run: the
-    // watcher reads watch.json on every poll and watches exactly what it
-    // names. $DEEP_REVIEW_REPO is deliberately not consulted — it means "the
-    // repo a bare PR number refers to", and quietly turning that into a
-    // watch would be the kind of implicit scope this file replaced.
+    // --repo here narrows the file, not this run: the watcher reads
+    // watch.json on every poll and searches exactly what it holds.
+    // $DEEP_REVIEW_REPO is deliberately not consulted — it means "the repo a
+    // bare PR number refers to", and quietly turning that into a watch would
+    // be the kind of implicit scope this file exists to keep explicit.
     if (values.repo) {
       const { file, added } = addWatchedRepo(values.repo);
       log(added ? `Added ${values.repo} to ${file}.` : `${values.repo} is already in ${file}.`);
     }
     const config = readWatchConfig();
     for (const problem of config.problems) log(`${watchConfigFile()}: ${problem}`);
-    const scope =
-      config.repos.length === 0
-        ? "in no repos yet"
-        : `in ${config.repos.map((repo) => repo.repo).join(", ")}`;
+    const scope = config.fromDefaults ? "wherever GitHub says they are" : `matching the searches in ${watchConfigFile()}`;
 
     if (values.foreground) {
       // Started by launchd, which sources no profile: the keys captured at
       // install time are the only ones this process will ever see.
       loadWatcherEnv();
-      // An empty file is not fatal here: launchd would only restart us into
-      // the same emptiness, and each poll says what it is not watching.
       log(
         `Watching PRs waiting on your review, and the ones you opened, ${scope}, ` +
           `every ${intervalSeconds ?? DEFAULT_INTERVAL_MS / 1000}s.`,
@@ -216,18 +212,16 @@ async function main(): Promise<void> {
       return;
     }
 
-    if (config.repos.length === 0) {
-      // Refuse rather than install an agent that watches nothing: the point
-      // of this file is that nothing is watched unless it is named, and the
-      // moment to say so is now, with someone reading.
+    if (config.searches.length === 0) {
+      // Every search was unusable; installing an agent that asks nothing
+      // would be a job that quietly did nothing every five minutes.
       throw new Error(
-        `Nothing to watch: ${watchConfigFile()} names no repos.\n` +
-          `Name one with pr-review watch --repo <owner>/<repo>, or write the file yourself:\n` +
+        `Nothing to search for: every search in ${watchConfigFile()} was skipped.\n` +
+          `Write the file as:\n` +
           exampleWatchConfig()
             .split("\n")
             .map((line) => `  ${line}`)
-            .join("\n") +
-          `\nA repo not named there is never watched.`,
+            .join("\n"),
       );
     }
 
@@ -238,7 +232,7 @@ async function main(): Promise<void> {
     log(
       `Watching PRs waiting on your review, and the ones you opened, ${scope}, ` +
         `every ${intervalSeconds ?? DEFAULT_INTERVAL_MS / 1000}s.\n` +
-        `Edit ${watchConfigFile()} to change which repos, or their queries; it is read on every check.\n` +
+        `Edit ${watchConfigFile()} to change what is searched for; it is read on every check.\n` +
         `Reviews appear at the server's index as they build; pr-review status shows both.\n` +
         `Carried into the background: ${result.captured.join(", ")}.\n` +
         `Log: ${watcherLogFile()}`,
@@ -296,12 +290,8 @@ async function main(): Promise<void> {
           `${agentLoaded() ? "" : " (this session only; not installed at login)"}.`,
       );
       if (watcher.lastError) log(`  last check failed: ${watcher.lastError}`);
-      const repos = readWatchConfig().repos.map((repo) => repo.repo);
-      log(
-        repos.length > 0
-          ? `  repos: ${repos.join(", ")}`
-          : `  repos: none — ${watchConfigFile()} names no repos.`,
-      );
+      const searches = readWatchConfig().searches;
+      for (const search of searches) log(`  ${search.role}: ${search.query}`);
     } else if (agentInstalled()) {
       log(`Watching is installed but not running; see ${watcherLogFile()}.`);
     } else {

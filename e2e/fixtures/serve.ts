@@ -35,7 +35,7 @@ const build: BuildPr = ({ prUrl, navBase }, log) => {
 };
 
 // The client build beside this checkout: the pages are its to render.
-const uiDir = fileURLToPath(new URL("../../packages/ui/dist/", import.meta.url));
+const uiDir = fileURLToPath(new URL("../../packages/desktop/out/renderer/", import.meta.url));
 const server = await startNavServer({ build, port: PORT, uiDir, retry: { transientDelaysMs: [3_600_000], buildRetries: 0, buildDelayMs: 3_600_000, transientMaxMs: 3_600_000 } });
 const ref = (number: number) => ({ owner: "acme", repo: "widgets", number });
 server.add(ref(1), {}, { role: "review", author: "sam", approved: true, approvers: ["alex"], headSha: "b".repeat(40) });

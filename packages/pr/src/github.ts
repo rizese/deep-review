@@ -189,77 +189,82 @@ export interface AssignedPr extends PrRef {
 }
 
 /**
- * The clauses that spell "waiting on me", as GitHub's search understands them.
+ * What "waiting on me" means by default, as two searches: GitHub cannot OR
+ * two qualifiers in one query, and being assigned and having your review
+ * requested are different things — on spara-ai/spara-app two PRs were
+ * requested without being assigned, and three assigned without being
+ * requested. Both are PRs waiting on you, so both are asked for and the
+ * answers are merged.
  *
- * Assigned and open is not the same as needing review: a draft is not ready
- * to be read, so drafts are excluded. Approved PRs are *not* excluded here —
- * GitHub's `review:approved` means approved by anyone, so a PR with one
- * approval in and yours still requested would vanish from the list. They
- * come through with `approved` set instead, and the index hides them on
- * request.
+ * Drafts are left out: a draft is not ready to be read. Approved PRs are
+ * *not* — GitHub's `review:approved` means approved by anyone, so a PR with
+ * one approval in and yours still requested would vanish. They come through
+ * with `approved` set and the index hides them on request.
  */
-export const DEFAULT_REVIEW_QUERY = "is:open is:pr assignee:@me archived:false -is:draft";
+export const DEFAULT_REVIEW_SEARCHES = [
+  "is:open is:pr archived:false draft:false assignee:@me",
+  "is:open is:pr archived:false draft:false review-requested:@me",
+];
 
-/** The clauses that spell "mine": every open PR you opened, drafts included. */
-export const DEFAULT_AUTHORED_QUERY = "is:open is:pr author:@me archived:false";
+/** What "mine" means by default: every open PR you opened, drafts included. */
+export const DEFAULT_AUTHORED_SEARCHES = ["is:open is:pr archived:false author:@me"];
 
-/** A `repo:` qualifier, negated or not, anywhere in a query string. */
-const REPO_QUALIFIER = /(^|\s)-?repo:/i;
-
-/** Does this query try to say which repo it is about? Only the caller may. */
-export function namesRepo(query: string): boolean {
-  return REPO_QUALIFIER.test(query);
-}
-
-export interface AssignedPrQuery {
-  /**
-   * The one `owner/repo` to search. Required, and not by accident: a search
-   * with no repo returns every PR the token can see, in every repo, and the
-   * watcher once handed six PRs from an unrelated personal repo to the
-   * server that way. There is deliberately no way to ask for that here.
-   */
-  repo: string;
-  /**
-   * The filter clauses, without any `repo:` — that comes from `repo`, so a
-   * query can never scope itself to a different repo than the one it is
-   * filed under. Defaults to `DEFAULT_REVIEW_QUERY`.
-   */
-  query?: string | undefined;
-}
-
-/** One repo to watch: the review query and the authored query, both optional. */
-export interface WatchedPrQuery extends AssignedPrQuery {
-  /** Clauses for "my PRs" in this repo, without `repo:`. Defaults to `DEFAULT_AUTHORED_QUERY`. */
-  authoredQuery?: string | undefined;
+/** One search to run, and which tab its hits belong on. */
+export interface PrSearch {
+  role: PrRole;
+  /** A GitHub issue-search query, exactly as github.com/pulls would take it. */
+  query: string;
 }
 
 /**
- * The search string for one repo's PRs waiting on you.
+ * The qualifiers that tie a search to somebody or somewhere.
  *
- * The `repo:` clause is appended here, from the option, rather than stored
- * in the query: the query then says *what kind* of PR and the repo says
- * *where*, and neither can contradict the other. A query that names a repo
- * itself is refused — two `repo:` qualifiers in one GitHub search widen it
- * to both repos, which is exactly the shape of leak this exists to prevent.
+ * A query with none of these returns every PR the token can see, in every
+ * repo — which is how the watcher once handed six PRs from an unrelated
+ * personal repo to the server. The fix used to be that every search named a
+ * repo; that made the repo list the source of truth, which is a poor one.
+ * The rule now is only that a search must be bounded by *something*: a repo,
+ * an owner, or a person. `assignee:@me` is bounded. `is:open is:pr` is not.
  */
-export function assignedPrsQuery(options: AssignedPrQuery): string {
-  return scopedQuery(options.repo, options.query ?? DEFAULT_REVIEW_QUERY);
+const BOUNDING = /(^|\s)-?(repo|user|org|owner|assignee|author|review-requested|reviewed-by|user-review-requested|team-review-requested|involves|mentions|commenter):/i;
+
+export function isBounded(query: string): boolean {
+  return BOUNDING.test(query);
 }
 
-/** The search string for one repo's PRs you opened; same rules as `assignedPrsQuery`. */
-export function authoredPrsQuery(options: WatchedPrQuery): string {
-  return scopedQuery(options.repo, options.authoredQuery ?? DEFAULT_AUTHORED_QUERY);
-}
-
-function scopedQuery(repo: string, query: string): string {
+/** The query a search should run, or a refusal saying why it will not. */
+export function checkSearch(query: string): string {
   const clauses = query.trim();
-  if (namesRepo(clauses)) {
+  if (!clauses) throw new ConfigError("A search cannot be empty.");
+  if (!isBounded(clauses)) {
     throw new ConfigError(
-      `The query for ${repo} names a repo itself (${JSON.stringify(clauses)}); ` +
-        "the repo comes from the entry, so leave repo: out of it.",
+      `The search ${JSON.stringify(clauses)} names nobody and nowhere, so GitHub would answer it with every ` +
+        "pull request the token can see. Add a repo:, user:, org:, assignee:, author: or review-requested: clause.",
     );
   }
-  return `${clauses} repo:${repo}`;
+  return clauses;
+}
+
+/**
+ * The query out of whatever was pasted: a GitHub search URL — the address
+ * bar of github.com/pulls, /issues or /search, where these are built — or
+ * the query itself. Anything else comes back trimmed and is checked like
+ * any other query.
+ */
+export function parseSearchInput(input: string): string {
+  const text = input.trim();
+  if (/^https?:\/\//i.test(text)) {
+    try {
+      const url = new URL(text);
+      if (/(^|\.)github\.com$/i.test(url.hostname)) {
+        const q = url.searchParams.get("q");
+        if (q) return q.trim();
+      }
+    } catch {
+      // Not a URL after all; treat it as a query.
+    }
+  }
+  return text;
 }
 
 /** What one search hit looks like, once GraphQL has narrowed it to a pull request. */
@@ -277,28 +282,28 @@ interface SearchNode {
 }
 
 interface SearchGraphResponse {
-  data?: { review?: { nodes: SearchNode[] }; authored?: { nodes: SearchNode[] } };
+  data?: Record<string, { nodes: SearchNode[] } | undefined>;
   errors?: { message: string; type?: string }[];
 }
 
 /**
- * Both lists for one repo in one request. GraphQL rather than the REST
- * search because the REST result knows nothing of reviews: whether a PR is
- * approved, and by whom, is only here, and it is what the index's "hide
- * approved" needs. Two aliased searches ride in the one query, so a poll
- * costs one call per repo whatever it finds.
+ * Every search in one request. GraphQL rather than the REST search because
+ * the REST result knows nothing of reviews: whether a PR is approved, and by
+ * whom, is only here, and it is what the index's "hide approved" needs. The
+ * searches ride together as aliases, so a poll costs one call however many
+ * questions it asks.
  */
-const SEARCH_QUERY = `
-query($review: String!, $authored: String!) {
-  review: search(query: $review, type: ISSUE, first: 100) { nodes { ...Pr } }
-  authored: search(query: $authored, type: ISSUE, first: 100) { nodes { ...Pr } }
+function searchDocument(count: number): string {
+  const params = Array.from({ length: count }, (_, i) => `$q${i}: String!`).join(", ");
+  const fields = Array.from(
+    { length: count },
+    (_, i) => `  s${i}: search(query: $q${i}, type: ISSUE, first: ${PER_SEARCH}) { nodes { ...Pr } }`,
+  ).join("\n");
+  return `query(${params}) {\n${fields}\n}\nfragment Pr on PullRequest {\n  number title url updatedAt isDraft reviewDecision headRefOid\n  author { login }\n  repository { nameWithOwner }\n  latestOpinionatedReviews(first: 20) { nodes { state author { login } } }\n}`;
 }
-fragment Pr on PullRequest {
-  number title url updatedAt isDraft reviewDecision headRefOid
-  author { login }
-  repository { nameWithOwner }
-  latestOpinionatedReviews(first: 20) { nodes { state author { login } } }
-}`;
+
+/** GitHub's own ceiling for one search page, and so the most any one search reports. */
+export const PER_SEARCH = 100;
 
 /** A search hit into an `AssignedPr`, or null for a hit that is not a pull request we can name. */
 function fromNode(node: SearchNode, role: PrRole): AssignedPr | null {
@@ -330,21 +335,26 @@ function fromNode(node: SearchNode, role: PrRole): AssignedPr | null {
 }
 
 /**
- * The open PRs in one repo that concern you: waiting on your review, and
- * opened by you. One PR can be in both — you opened it and assigned yourself
- * — and comes back once, as yours.
+ * The open PRs these searches find: what is waiting on your review, and
+ * what you opened. A PR two searches both report comes back once, and one
+ * that is both yours and assigned to you comes back as yours.
  *
  * This asks for *state*, not for events: every call reports the full set, so
  * a caller that has been asleep for a night catches up on one poll and needs
  * no cursor arithmetic to do it. Requires a token — `@me` has no meaning
- * without one. Requires a repo, too; see `AssignedPrQuery`.
+ * without one.
  */
-export async function listWatchedPrs(options: WatchedPrQuery): Promise<AssignedPr[]> {
-  const variables = { review: assignedPrsQuery(options), authored: authoredPrsQuery(options) };
+export async function searchPrs(
+  searches: PrSearch[],
+  options: { onNote?: ((message: string) => void) | undefined } = {},
+): Promise<AssignedPr[]> {
+  if (searches.length === 0) return [];
+  const queries = searches.map((search) => checkSearch(search.query));
+  const variables = Object.fromEntries(queries.map((query, i) => [`q${i}`, query]));
   const body = (await githubFetch("https://api.github.com/graphql", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query: SEARCH_QUERY, variables }),
+    body: JSON.stringify({ query: searchDocument(searches.length), variables }),
     tokenRequired: "GITHUB_TOKEN is not set; it is needed to find your PRs.",
     failed: (status) => `GitHub search returned ${status}`,
   })) as SearchGraphResponse;
@@ -355,13 +365,15 @@ export async function listWatchedPrs(options: WatchedPrQuery): Promise<AssignedP
     );
   }
   const byKey = new Map<string, AssignedPr>();
-  // Review hits first, authored second, so a PR in both ends up as yours.
-  for (const [role, nodes] of [
-    ["review", body.data?.review?.nodes ?? []],
-    ["authored", body.data?.authored?.nodes ?? []],
-  ] as const) {
+  // Review hits first and authored second, so a PR in both ends up as yours.
+  const order = [...searches.keys()].sort((a, b) => Number(searches[a]!.role === "authored") - Number(searches[b]!.role === "authored"));
+  for (const i of order) {
+    const nodes = body.data?.[`s${i}`]?.nodes ?? [];
+    if (nodes.length === PER_SEARCH) {
+      options.onNote?.(`the search ${JSON.stringify(queries[i])} matched at least ${PER_SEARCH} PRs; only the first ${PER_SEARCH} are followed.`);
+    }
     for (const node of nodes) {
-      const pr = fromNode(node, role);
+      const pr = fromNode(node, searches[i]!.role);
       if (pr) byKey.set(`${pr.owner}/${pr.repo}#${pr.number}`, pr);
     }
   }

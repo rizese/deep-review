@@ -101,9 +101,9 @@ export interface LanguageBackend {
 }
 
 /** Functions longer than this are elided to context windows (callers only). */
-export const LARGE_FUNCTION_LINES = 60;
+const LARGE_FUNCTION_LINES = 60;
 /** Context shown on each side of a call site when eliding, like `diff -U10`. */
-export const CONTEXT_LINES = 10;
+const CONTEXT_LINES = 10;
 
 /** Build a snapshot's source segments from full file lines. */
 export function extractSource(

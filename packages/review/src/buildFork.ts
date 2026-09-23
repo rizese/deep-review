@@ -25,7 +25,7 @@ import {
 import type { BuildPr, BuiltPr } from "./registry.js";
 
 /** What a build request looks like on the wire; the same shape `BuildPr` takes. */
-export type BuildRequest = Parameters<BuildPr>[0];
+type BuildRequest = Parameters<BuildPr>[0];
 
 export type WorkerToParent =
   | { type: "log"; message: string }
@@ -72,8 +72,10 @@ function execArgvFor(workerPath: string): string[] {
 }
 
 export interface ForkBuildOptions {
-  /** Another worker script, for tests. */
+  /** Another worker script — for tests, or for a host that bundled this code somewhere else. */
   workerPath?: string | undefined;
+  /** Extra environment for the child; Electron hosts set ELECTRON_RUN_AS_NODE here. */
+  env?: NodeJS.ProcessEnv | undefined;
 }
 
 /**
@@ -90,7 +92,7 @@ export function forkBuild(options: ForkBuildOptions = {}): BuildPr {
       try {
         child = fork(workerPath, [], {
           execArgv: execArgvFor(workerPath),
-          env: process.env,
+          env: { ...process.env, ...options.env },
           stdio: ["ignore", "inherit", "inherit", "ipc"],
           // IPC carries a multi-megabyte page in one message; the default
           // serializer is fine for it, advanced would be slower.

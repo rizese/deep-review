@@ -86,13 +86,52 @@ optional and enables linked-ticket context. A `.env` in the package or repo
 root is picked up automatically, so `GITHUB_TOKEN=$(gh auth token)` can live
 there instead of being passed per invocation.
 
+## The desktop app
+
+`packages/desktop` is Deep Review as a Mac app: the same server, watcher and
+pages, in one window with a tray icon, notifications when a PR is ready, and
+a Settings page that keeps your tokens and model keys in the keychain (via
+Electron's `safeStorage`) instead of the environment. It takes over from the
+CLI's daemon and the launchd watcher when it starts, and the `pr-review` CLI
+keeps working against it.
+
+```sh
+pnpm dev          # run it in development, with hot reload for the pages
+pnpm build:mac    # build packages/desktop/dist/*.dmg (unsigned)
+pnpm reset        # clear everything and start from a first run
+```
+
+The menu-bar icon is generated, not drawn by hand: `node
+scripts/make-tray-icon.mjs` reads `packages/desktop/resources/mark-source.jpeg`
+and writes the mark on transparency plus the two black-on-transparent
+`trayTemplate` files macOS tints for itself. It crops to the artwork and
+scales to a height rather than into a square, because the menu bar limits
+how tall an item is and lets it be as wide as it likes — fitting the
+longest side would throw away half the resolution of a mark this wide.
+Re-run it if the mark changes.
+
+
+`pnpm reset` exists because the state lives in two places and clearing one
+without the other leaves them disagreeing: delete the server's PR store on
+its own and the watcher still believes it handed those PRs over, so it
+hands over nothing ever again. It clears `~/.deep-review` (PR pages, the
+watcher's memory, the searches, checkouts, logs) and the app's data
+directory (the encrypted token and model keys, the Dock badge's read marks,
+window state), after saying what it will delete and asking. `--keep-keys`
+leaves you signed in with your model keys, `--dry-run` only says what would
+go, `--yes` skips the question. It refuses to run while the app is up,
+since the app would write its state straight back.
+
+Merges to `main` build an unsigned arm64 release through
+`.github/workflows/release.yml`.
+
 ## Structure
 
 - `packages/pr` — one PR's raw material: URL parsing, GitHub metadata, linked Linear tickets, base/head worktrees, and unified-diff parsing. Depended on by the two analysis packages below.
 - `packages/call-graph` — analyze how a function's callers/callees change across a GitHub PR, using the TypeScript language service's call hierarchy (and Pyright for Python). Also renders the explorer pages.
 - `packages/slicer` — break a PR's diff into prioritized slices with an agent.
 - `packages/review` — the two together: slices on the vertical axis, call graphs on the horizontal. The `pr-review` CLI, the local server and its API, the watcher.
-- `packages/ui` — the client app (React + Vite, CSS modules): the index, the building placeholder and the explorer, rendered in the browser from the server's JSON. `pnpm --filter @deep-review/ui dev` runs it with hot reload against a running server.
+- `packages/desktop` — the Mac app (electron-vite): `src/main.ts` runs the server and the watcher, `src/preload.ts` is the typed bridge for settings, and `src/renderer` is the React client app (CSS modules) that renders the index, the building placeholder and the explorer from the server's JSON.
 
 
 
@@ -108,9 +147,7 @@ Run from the repo root:
 | `pnpm test`      | Run all tests (Vitest)                 |
 | `pnpm e2e`       | Compare the pages against their visual baselines (Playwright, Chromium) |
 | `pnpm e2e:update` | Re-take the baselines after a deliberate visual change |
-
-
-
+| `pnpm reset`     | Clear all state and start from a first run (`--keep-keys`, `--dry-run`, `--yes`) |
 
 ## Watching your assigned PRs
 
@@ -135,54 +172,55 @@ every other invocation uses — starting it if it is not up, so there is never
 a server to start yourself. New PRs simply appear on the server's index,
 built and ready.
 
-Which repos it watches is the business of one file, `~/.deep-review/watch.json`
-(under `$DEEP_REVIEW_HOME`, beside the rest of the state). `pr-review watch --repo <owner>/<repo>` adds a repo to it; or write it yourself:
+What it looks for is the business of one file, `~/.deep-review/watch.json`
+(under `$DEEP_REVIEW_HOME`, beside the rest of the state): a GitHub search
+per tab of the index, exactly the query github.com/pulls runs.
 
 ```json
 {
-  "repos": {
-    "acme/widgets": {},
-    "acme/gadgets": {
-      "query": "is:open is:pr review-requested:@me -is:draft",
-      "authoredQuery": "is:open is:pr author:@me -is:draft"
-    }
+  "searches": {
+    "review": [
+      "is:open is:pr archived:false draft:false assignee:@me",
+      "is:open is:pr archived:false draft:false review-requested:@me"
+    ],
+    "authored": ["is:open is:pr archived:false author:@me"]
   }
 }
 ```
 
-Each key is a repo to watch, and naming it is all opting in takes: an empty
-entry uses the default queries below. An entry may instead carry its own
-`query`, in GitHub search syntax, for a repo where "waiting on me" is spelled
-differently, and its own `authoredQuery` for what counts as one of yours.
-Leave `repo:` out of both — the repo is the key, and is appended for you, so
-no entry's query can reach into a repo other than the one it is filed under;
-one that tries is skipped with a note in the log. The file is read on every
-check, so adding a repo needs no reinstall.
+A list per tab because GitHub cannot OR two qualifiers in one query: being
+assigned and having your review requested are different things, and both are
+PRs waiting on you, so both are asked for and the answers merged. A PR two
+searches both find is handed over once.
 
-A repo not named in the file is never watched. Not queried, not touched, not
-on the server: there is no default that means "every repo your token can see",
-and no flag or environment variable that widens the list. An empty file, or
-none, means nothing is watched, and each check says so in the log.
-`DEEP_REVIEW_REPO` still names the repo a bare PR number refers to; it plays
-no part in what is watched.
+There used to be a list of repos here instead, each queried separately, and
+that list was the source of truth for what you were reviewing. It made a poor
+one: a PR waiting on you in a repo nobody had named was invisible, and naming
+repos is work GitHub already does. An old file is still read — its repos
+become repo-scoped searches, so an upgrade watches what it watched yesterday
+— and saving from the app rewrites it in the new shape.
 
-"Waiting on your review" is narrower than "assigned to you": a draft is not
-ready to be read, so drafts are excluded. Approved PRs are not — GitHub's
-`review:approved` means approved by *anyone*, so filtering on it would hide a
-PR one colleague has approved while your review is still requested. They come
-through marked approved instead, for the index's box to hide. The default
-review query, for each repo, is exactly:
+What the repo list was protecting against is still real. A search bound to
+nobody and nowhere returns every PR the token can see, and one night that
+quietly handed six PRs from a personal repo to the server. So every search
+must name a person, an owner or a repo — `assignee:@me`, `user:acme`,
+`repo:acme/widgets` — and one that names none is skipped with a note in the
+log rather than asked. Narrowing is the search's job: add `user:acme` to
+watch one org, `repo:acme/widgets` to watch one repo. `pr-review watch --repo
+<owner>/<repo>` is sugar for the latter. The file is read on every check, so
+changing it needs no reinstall. `DEEP_REVIEW_REPO` still names the repo a bare
+PR number refers to; it plays no part in what is searched for.
 
-```
-is:open is:pr assignee:@me archived:false -is:draft repo:<owner>/<repo>
-```
+In the desktop app, Settings shows each search with the number of PRs it
+finds right now, so a search can be judged before it is saved and starts
+building what it matches.
 
-and the default authored query, drafts included since a draft of yours is
-still yours:
-
-```
-is:open is:pr author:@me archived:false repo:<owner>/<repo>
-```
+"Waiting on your review" is narrower than "open and yours to worry about": a
+draft is not ready to be read, so drafts are excluded. Approved PRs are not —
+GitHub's `review:approved` means approved by *anyone*, so filtering on it
+would hide a PR one colleague has approved while your review is still
+requested. They come through marked approved instead, for the index's box to
+hide.
 
 A PR in both lists — one you opened and assigned to yourself — is yours, and
 appears once, under My PRs.

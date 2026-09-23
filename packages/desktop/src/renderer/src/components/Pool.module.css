@@ -1,0 +1,31 @@
+/* The water. One fixed layer behind everything, mounted once for the life
+   of the app, so nothing about it repaints as pages change. Two soft
+   highlights drift across the gradient on long, offset loops — slow enough
+   to read as light on a surface rather than motion — and the grain sits
+   still on top. */
+.pool { position: fixed; inset: 0; z-index: -1; overflow: hidden; background: var(--pool); }
+.layer { position: absolute; inset: -25%; will-change: transform; }
+.a {
+  background: radial-gradient(ellipse 55% 42% at 32% 38%, var(--pool-glow) 0%, transparent 72%);
+  animation: drift-a 48s ease-in-out infinite alternate;
+}
+.b {
+  background: radial-gradient(ellipse 48% 58% at 68% 66%, var(--pool-glow-2) 0%, transparent 72%);
+  animation: drift-b 67s ease-in-out infinite alternate;
+}
+.grain {
+  position: absolute; inset: 0; pointer-events: none;
+  background: url("../assets/grain.svg") repeat; background-size: 180px 180px;
+  opacity: var(--grain, 0.55);
+}
+@keyframes drift-a {
+  from { transform: translate(-3%, -2%) scale(1); }
+  to { transform: translate(3%, 3%) scale(1.08); }
+}
+@keyframes drift-b {
+  from { transform: translate(2%, 3%) scale(1.05); }
+  to { transform: translate(-3%, -3%) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .a, .b { animation: none; }
+}
