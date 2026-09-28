@@ -142,7 +142,7 @@ export interface RetryPolicy {
   buildDelayMs: number;
 }
 
-export const DEFAULT_RETRY: RetryPolicy = {
+const DEFAULT_RETRY: RetryPolicy = {
   transientDelaysMs: [60_000, 120_000, 300_000, 900_000, 1_800_000, 3_600_000],
   transientMaxMs: 24 * 3_600_000,
   buildRetries: 1,

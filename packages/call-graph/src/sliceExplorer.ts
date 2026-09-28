@@ -136,7 +136,7 @@ export function explorerFileIndex(input: SliceExplorerInput): FileIndex {
   });
 }
 
-export interface LineDelta {
+interface LineDelta {
   additions: number;
   deletions: number;
 }

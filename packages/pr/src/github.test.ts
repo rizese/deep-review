@@ -1,78 +1,99 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BuildError, ConfigError, InputError, TransientError } from "./errors.js";
 import {
-  assignedPrsQuery,
-  authoredPrsQuery,
-  DEFAULT_AUTHORED_QUERY,
-  DEFAULT_REVIEW_QUERY,
+  checkSearch,
+  DEFAULT_AUTHORED_SEARCHES,
+  DEFAULT_REVIEW_SEARCHES,
   fetchPrInfo,
-  listWatchedPrs,
-  namesRepo,
+  isBounded,
+  parseSearchInput,
+  PER_SEARCH,
+  searchPrs,
+  type PrSearch,
 } from "./github.js";
 
-describe("assignedPrsQuery", () => {
-  const acme = { repo: "acme/widgets" };
-
-  it("asks for open PRs assigned to the token's owner", () => {
-    const q = assignedPrsQuery(acme);
-    expect(q).toContain("is:open");
-    expect(q).toContain("is:pr");
-    expect(q).toContain("assignee:@me");
+describe("the default searches", () => {
+  it("ask for open PRs assigned to you and for ones whose review you were asked for", () => {
+    expect(DEFAULT_REVIEW_SEARCHES).toHaveLength(2);
+    expect(DEFAULT_REVIEW_SEARCHES[0]).toContain("assignee:@me");
+    expect(DEFAULT_REVIEW_SEARCHES[1]).toContain("review-requested:@me");
+    for (const q of DEFAULT_REVIEW_SEARCHES) {
+      expect(q).toContain("is:open");
+      expect(q).toContain("is:pr");
+      // A draft is not ready to be read.
+      expect(q).toContain("draft:false");
+    }
   });
 
-  it("excludes drafts, which are not ready to be read", () => {
-    expect(assignedPrsQuery(acme)).toContain("-is:draft");
-  });
-
-  it("does not exclude approved PRs, since GitHub's approval is anyone's", () => {
-    // `-review:approved` once lived here to skip PRs you had signed off on.
-    // But GitHub's `review:approved` is satisfied by *any* approval, so a PR
-    // with one review in and yours still asked for vanished from the list.
+  it("do not exclude approved PRs, since GitHub's approval is anyone's", () => {
+    // `review:approved` is satisfied by *any* approval, so a PR with one
+    // review in and yours still asked for would vanish from the list.
     // Approved PRs come through and the index hides them on request instead.
-    expect(assignedPrsQuery(acme)).not.toContain("review:approved");
+    for (const q of DEFAULT_REVIEW_SEARCHES) expect(q).not.toContain("review:approved");
   });
 
-  it("asks for your own open PRs separately, drafts included", () => {
-    const q = authoredPrsQuery(acme);
-    expect(q).toBe(`${DEFAULT_AUTHORED_QUERY} repo:acme/widgets`);
-    expect(q).toContain("author:@me");
-    expect(q).not.toContain("-is:draft");
-    expect(authoredPrsQuery({ repo: "acme/widgets", authoredQuery: "is:open is:pr author:@me label:x" })).toBe(
-      "is:open is:pr author:@me label:x repo:acme/widgets",
-    );
-    expect(() => authoredPrsQuery({ repo: "acme/widgets", authoredQuery: "is:open repo:acme/other" })).toThrow(
-      /names a repo/,
-    );
+  it("ask for your own open PRs separately, drafts included", () => {
+    expect(DEFAULT_AUTHORED_SEARCHES).toEqual(["is:open is:pr archived:false author:@me"]);
+    expect(DEFAULT_AUTHORED_SEARCHES[0]).not.toContain("draft:false");
   });
 
-  it("always scopes to the repo it was given", () => {
-    // There is no unscoped form. A search with no repo: returns every PR
-    // the token can see, and once handed the watcher six PRs from a repo
-    // nobody meant to watch; the option is required so that cannot recur.
-    expect(assignedPrsQuery(acme)).toContain("repo:acme/widgets");
-    expect(assignedPrsQuery(acme)).toBe(`${DEFAULT_REVIEW_QUERY} repo:acme/widgets`);
+  it("name nowhere in particular: the search is the source of truth, not a repo list", () => {
+    for (const q of [...DEFAULT_REVIEW_SEARCHES, ...DEFAULT_AUTHORED_SEARCHES]) {
+      expect(q).not.toContain("repo:");
+      expect(isBounded(q)).toBe(true);
+    }
+  });
+});
+
+describe("checkSearch", () => {
+  it("takes a search bound to a person, an owner or a repo", () => {
+    for (const q of [
+      "is:open is:pr assignee:@me",
+      "is:open is:pr user:spara-ai draft:false assignee:rizese",
+      "is:open is:pr repo:acme/widgets",
+      "is:open is:pr org:acme",
+      "is:open is:pr review-requested:@me",
+      "is:open is:pr involves:rizese",
+    ]) {
+      expect(checkSearch(q)).toBe(q);
+    }
   });
 
-  it("takes a repo's own clauses in place of the default ones", () => {
-    const q = assignedPrsQuery({ repo: "acme/widgets", query: "is:open is:pr review-requested:@me" });
-    expect(q).toBe("is:open is:pr review-requested:@me repo:acme/widgets");
-    expect(q).not.toContain("assignee:@me");
+  it("refuses one that would return every PR the token can see", () => {
+    // This is how the watcher once handed over six PRs from a personal repo.
+    expect(() => checkSearch("is:open is:pr")).toThrow(/names nobody and nowhere/);
+    expect(() => checkSearch("  ")).toThrow(/cannot be empty/);
+    expect(() => checkSearch("is:open is:pr")).toThrow(ConfigError);
   });
 
-  it("appends the repo from the option, never from the clauses", () => {
-    // Two repo: qualifiers in one GitHub search widen it to both repos, so a
-    // configured query that named a repo could quietly watch a second one.
-    // The repo is the entry's business; a query that claims one is refused.
-    expect(() => assignedPrsQuery({ repo: "acme/widgets", query: "is:open repo:acme/other" })).toThrow(
-      /names a repo/,
-    );
-    expect(() => assignedPrsQuery({ repo: "acme/widgets", query: "is:open -repo:acme/other" })).toThrow();
+  it("does not mistake a word ending in a qualifier's name for the qualifier", () => {
+    expect(isBounded("is:open label:monorepo:fix")).toBe(false);
+    expect(isBounded("is:open REPO:x")).toBe(true);
+    expect(isBounded("is:open -user:dependabot")).toBe(true);
   });
 
-  it("does not mistake a word ending in repo: for the qualifier", () => {
-    expect(namesRepo("is:open label:monorepo:fix")).toBe(false);
-    expect(namesRepo("repo:x")).toBe(true);
-    expect(namesRepo("is:open REPO:x")).toBe(true);
+  it("trims what it is given", () => {
+    expect(checkSearch("  is:open assignee:@me  ")).toBe("is:open assignee:@me");
+  });
+});
+
+describe("parseSearchInput", () => {
+  it("takes the query out of a GitHub search URL, which is where these are built", () => {
+    expect(
+      parseSearchInput(
+        "https://github.com/pulls/search?q=is%3Aopen+is%3Apr+archived%3Afalse+user%3Aspara-ai+draft%3Afalse+assignee%3Arizese+sort%3Aupdated-desc",
+      ),
+    ).toBe("is:open is:pr archived:false user:spara-ai draft:false assignee:rizese sort:updated-desc");
+    expect(parseSearchInput("https://github.com/issues?q=is%3Aopen+assignee%3A%40me")).toBe("is:open assignee:@me");
+  });
+
+  it("leaves a query alone", () => {
+    expect(parseSearchInput("  is:open is:pr assignee:@me ")).toBe("is:open is:pr assignee:@me");
+  });
+
+  it("does not take a q from somewhere that is not GitHub, or from a URL without one", () => {
+    expect(parseSearchInput("https://example.com/?q=is:open")).toBe("https://example.com/?q=is:open");
+    expect(parseSearchInput("https://github.com/pulls")).toBe("https://github.com/pulls");
   });
 });
 
@@ -189,7 +210,7 @@ describe("a failed GitHub call", () => {
   });
 });
 
-describe("listWatchedPrs", () => {
+describe("searchPrs", () => {
   const node = (number: number, extra: Record<string, unknown> = {}) => ({
     number,
     title: `PR ${number}`,
@@ -203,12 +224,17 @@ describe("listWatchedPrs", () => {
     ...extra,
   });
 
+  const SEARCHES: PrSearch[] = [
+    { role: "review", query: "is:open is:pr assignee:@me" },
+    { role: "authored", query: "is:open is:pr author:@me" },
+  ];
+
   afterEach(() => {
     vi.unstubAllGlobals();
     delete process.env.GITHUB_TOKEN;
   });
 
-  it("asks both questions in one request and reads each PR's role and approval", async () => {
+  it("asks every search in one request and reads each PR's role and approval", async () => {
     process.env.GITHUB_TOKEN = "t";
     const calls: { url: string; body: { query: string; variables: Record<string, string> } }[] = [];
     vi.stubGlobal("fetch", async (url: string, init: { body: string }) => {
@@ -216,7 +242,7 @@ describe("listWatchedPrs", () => {
       return new Response(
         JSON.stringify({
           data: {
-            review: {
+            s0: {
               nodes: [
                 node(1, {
                   reviewDecision: "APPROVED",
@@ -227,18 +253,17 @@ describe("listWatchedPrs", () => {
                 {},
               ],
             },
-            authored: { nodes: [node(2, { author: { login: "me" }, isDraft: true }), node(3, { author: { login: "me" } })] },
+            s1: { nodes: [node(2, { author: { login: "me" }, isDraft: true }), node(3, { author: { login: "me" } })] },
           },
         }),
       );
     });
-    const prs = await listWatchedPrs({ repo: "acme/widgets" });
+    const prs = await searchPrs(SEARCHES);
     expect(calls).toHaveLength(1);
     expect(calls[0]!.url).toBe("https://api.github.com/graphql");
-    expect(calls[0]!.body.variables).toEqual({
-      review: `${DEFAULT_REVIEW_QUERY} repo:acme/widgets`,
-      authored: `${DEFAULT_AUTHORED_QUERY} repo:acme/widgets`,
-    });
+    expect(calls[0]!.body.variables).toEqual({ q0: "is:open is:pr assignee:@me", q1: "is:open is:pr author:@me" });
+    expect(calls[0]!.body.query).toContain("s0: search(query: $q0");
+    expect(calls[0]!.body.query).toContain("s1: search(query: $q1");
     expect(prs.map((pr) => [pr.number, pr.role, pr.approved, pr.approvers, pr.author, pr.draft])).toEqual([
       [1, "review", true, ["alex"], "someone", false],
       // In both lists: yours, once.
@@ -247,13 +272,49 @@ describe("listWatchedPrs", () => {
     ]);
   });
 
+  it("merges two review searches, reporting a PR both find only once", async () => {
+    process.env.GITHUB_TOKEN = "t";
+    vi.stubGlobal("fetch", async () =>
+      new Response(JSON.stringify({ data: { s0: { nodes: [node(1), node(2)] }, s1: { nodes: [node(2), node(5)] } } })),
+    );
+    const prs = await searchPrs([
+      { role: "review", query: "is:open assignee:@me" },
+      { role: "review", query: "is:open review-requested:@me" },
+    ]);
+    expect(prs.map((pr) => pr.number)).toEqual([1, 2, 5]);
+  });
+
+  it("says nothing to GitHub when there is nothing to ask", async () => {
+    const fetchImpl = vi.fn();
+    vi.stubGlobal("fetch", fetchImpl);
+    expect(await searchPrs([])).toEqual([]);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("refuses a search that names nobody rather than asking it", async () => {
+    process.env.GITHUB_TOKEN = "t";
+    const fetchImpl = vi.fn();
+    vi.stubGlobal("fetch", fetchImpl);
+    await expect(searchPrs([{ role: "review", query: "is:open is:pr" }])).rejects.toBeInstanceOf(ConfigError);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("says so when a search matched more than one page", async () => {
+    process.env.GITHUB_TOKEN = "t";
+    const nodes = Array.from({ length: PER_SEARCH }, (_, i) => node(i + 1));
+    vi.stubGlobal("fetch", async () => new Response(JSON.stringify({ data: { s0: { nodes } } })));
+    const notes: string[] = [];
+    await searchPrs([{ role: "review", query: "is:open assignee:@me" }], { onNote: (m) => notes.push(m) });
+    expect(notes.join(" ")).toContain("at least 100");
+  });
+
   it("counts an approval where the branch requires no review, unless changes were requested", async () => {
     process.env.GITHUB_TOKEN = "t";
     vi.stubGlobal("fetch", async () =>
       new Response(
         JSON.stringify({
           data: {
-            review: {
+            s0: {
               nodes: [
                 node(1, {
                   reviewDecision: null,
@@ -270,12 +331,12 @@ describe("listWatchedPrs", () => {
                 }),
               ],
             },
-            authored: { nodes: [] },
+            s1: { nodes: [] },
           },
         }),
       ),
     );
-    const prs = await listWatchedPrs({ repo: "acme/widgets" });
+    const prs = await searchPrs(SEARCHES);
     expect(prs.map((pr) => [pr.number, pr.approved, pr.approvers])).toEqual([
       [1, true, ["alex"]],
       [2, false, ["alex"]],
@@ -284,12 +345,12 @@ describe("listWatchedPrs", () => {
 
   it("refuses to search without a token, and surfaces GraphQL errors", async () => {
     delete process.env.GH_TOKEN;
-    await expect(listWatchedPrs({ repo: "acme/widgets" })).rejects.toThrow(/GITHUB_TOKEN/);
-    await expect(listWatchedPrs({ repo: "acme/widgets" })).rejects.toBeInstanceOf(ConfigError);
+    await expect(searchPrs(SEARCHES)).rejects.toThrow(/GITHUB_TOKEN/);
+    await expect(searchPrs(SEARCHES)).rejects.toBeInstanceOf(ConfigError);
     process.env.GITHUB_TOKEN = "t";
     vi.stubGlobal("fetch", async () => new Response(JSON.stringify({ errors: [{ message: "nope" }] })));
-    await expect(listWatchedPrs({ repo: "acme/widgets" })).rejects.toThrow(/nope/);
-    await expect(listWatchedPrs({ repo: "acme/widgets" })).rejects.toBeInstanceOf(BuildError);
+    await expect(searchPrs(SEARCHES)).rejects.toThrow(/nope/);
+    await expect(searchPrs(SEARCHES)).rejects.toBeInstanceOf(BuildError);
   });
 
   it("reads the GraphQL errors it can act on: a rate limit waits, a bad token is setup", async () => {
@@ -298,7 +359,7 @@ describe("listWatchedPrs", () => {
     process.env.GITHUB_TOKEN = "t";
     const answering = (errors: { message: string; type?: string }[]) => {
       vi.stubGlobal("fetch", async () => new Response(JSON.stringify({ errors })));
-      return listWatchedPrs({ repo: "acme/widgets" });
+      return searchPrs(SEARCHES);
     };
     await expect(answering([{ message: "API rate limit exceeded" }])).rejects.toBeInstanceOf(
       TransientError,
@@ -310,11 +371,5 @@ describe("listWatchedPrs", () => {
     await expect(
       answering([{ message: "Resource not accessible by integration" }]),
     ).rejects.toBeInstanceOf(ConfigError);
-  });
-
-  it("refuses a query that names a repo as a setup mistake", () => {
-    expect(() => assignedPrsQuery({ repo: "acme/widgets", query: "is:open repo:acme/other" })).toThrow(
-      ConfigError,
-    );
   });
 });

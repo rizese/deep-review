@@ -1,0 +1,28 @@
+/* What the two tabs are built from. A search is a line of GitHub's own
+   query language, so it is shown as one: monospace, full width, with what
+   it currently finds beside it. */
+.card { margin-top: 1rem; padding: 0.9rem 1rem 1rem; border: 1px solid var(--line-c); border-radius: 8px; background: var(--panel); }
+.label { font-size: 0.62rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: 0.7rem; }
+.blurb { color: var(--ink-soft); font-size: 0.85rem; margin-bottom: 0.9rem; max-width: 48rem; }
+.blurb code { font-family: var(--mono); font-size: 0.85em; color: var(--ink); }
+
+.tab { margin-bottom: 0.9rem; }
+.tabName { font-weight: 600; font-size: 0.85rem; margin-bottom: 0.4rem; }
+.tabNote { color: var(--ink-faint); font-size: 0.75rem; font-weight: 400; margin-left: 0.4rem; }
+.rows { display: flex; flex-direction: column; gap: 0.4rem; }
+.row { display: flex; align-items: center; gap: 0.5rem; }
+.input {
+  flex: 1; min-width: 0; padding: 0.35rem 0.8rem; border-radius: 999px;
+  border: 1px solid var(--glass-edge); background: var(--panel); color: var(--ink);
+  font-family: var(--mono); font-size: 0.78rem;
+}
+.input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.count { min-width: 5.5rem; text-align: right; color: var(--ink-faint); font-size: 0.75rem; font-variant-numeric: tabular-nums; }
+.count[data-bad="true"] { color: var(--del-edge); }
+.count[data-many="true"] { color: var(--accent); font-weight: 600; }
+.none { color: var(--ink-faint); font-size: 0.8rem; padding: 0.2rem 0; }
+.actions { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.9rem; }
+.note { font-size: 0.8rem; color: var(--add-edge); }
+.note[data-bad="true"] { color: var(--del-edge); }
+.problems { margin-top: 0.6rem; color: var(--del-edge); font-size: 0.78rem; }
+.sample { color: var(--ink-faint); font-size: 0.75rem; font-family: var(--mono); margin: 0.1rem 0 0 0.5rem; }

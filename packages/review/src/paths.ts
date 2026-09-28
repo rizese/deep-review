@@ -44,13 +44,13 @@ export function repoWorkDir(ref: Pick<PrRef, "owner" | "repo">): string {
 }
 
 /**
- * The client app's build, beside this package in the checkout: from src/ in
- * development and from dist/ when the CLI is built, the same two levels up.
- * The path is where a build would be, built or not; the server says so when
- * it is not there.
+ * The client app's build: the desktop package's renderer output, beside this
+ * package in the checkout — from src/ in development and from dist/ when the
+ * CLI is built, the same two levels up. The desktop app itself passes its
+ * own path; this is for `pr-review serve` without the app.
  */
 export function uiDist(): string {
-  return fileURLToPath(new URL("../../ui/dist/", import.meta.url));
+  return fileURLToPath(new URL("../../desktop/out/renderer/", import.meta.url));
 }
 
 /** The layout before per-repo roots: `work/<owner>-<repo>-pr<n>`, one clone each. */

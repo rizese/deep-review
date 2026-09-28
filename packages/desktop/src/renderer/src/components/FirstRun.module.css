@@ -1,0 +1,10 @@
+/* A first-run step: before there is a token, or a key, there is nothing to
+   list and one thing to do, so the whole page is that one thing. */
+.screen { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.1rem; padding: 0 1.5rem 6vh; text-align: center; }
+.mark { display: inline-flex; color: var(--ink); opacity: 0.9; }
+.mark svg { width: 2.6rem; height: 2.6rem; }
+.title { font-size: 1.5rem; font-weight: 600; letter-spacing: -0.02em; margin: 0; }
+.foot { color: var(--ink-faint); font-size: 0.78rem; max-width: 32rem; margin: 0; }
+.foot code { font-family: var(--mono); font-size: 0.9em; }
+.note { font-size: 0.85rem; color: var(--add-edge); max-width: 34rem; }
+.note[data-bad="true"] { color: var(--del-edge); }

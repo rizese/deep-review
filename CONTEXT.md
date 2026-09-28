@@ -137,12 +137,25 @@ re-rendered on restart). Clones and worktrees live under `work/<owner>/<repo>`:
 one clone per repo, one worktree per commit, released when the last PR that
 needs them is retired.
 
+**Desktop app**:
+`packages/desktop`, an electron-vite project in the same shape as Ricky's
+other apps: `src/main.ts` (main process: runs the review server in-process
+via `runDaemon`, the watcher's poll on a timer, tray, notifications, the
+encrypted settings store, IPC handlers), `src/preload.ts` (the typed
+`window.electronAPI` bridge — settings, watch list, app info), and
+`src/renderer` (the client app). The window loads the pages from the server
+over HTTP (from Vite in development), never from `file://`, so the API stays
+same-origin. On start it stops a CLI-started server and retires the launchd
+watcher: the app is the server and the watcher from then on. Electron is
+pinned to the version known to pass XProtect on this machine.
+_Avoid_: Electron app (say desktop app), shell (collides with the terminal)
+
 **Client app**:
-The React + Vite app in `packages/ui`, which renders every page in the
+The React + Vite app in `packages/desktop/src/renderer`, which renders every page in the
 browser — the index, the building placeholder, the explorer — from the
 server's JSON (`/prs`, `/events`, `/prs/<key>/input`) and the navigation
 routes (`/definition`, `/references`, `/panel` — the last still answering
-with a panel's HTML). The server serves its build (`packages/ui/dist`) at `/`
+with a panel's HTML). The server serves its build (`packages/desktop/out/renderer`) at `/`
 and at every held PR's mount path; with no build it answers 503 and says to
 run `pnpm build`. Styles are CSS modules over one token file
 (`src/styles/tokens.css`); the source-line classes the server's panel HTML
@@ -156,7 +169,7 @@ The frame every page sits in: the pool — a light-blue (or, at night, deep-blue
 grainy gradient behind everything — and one full-width glass bar along the
 top carrying the wordmark (the way home), the server's PR count with a `+`
 that adds a PR by URL, and the light / system / dark switch. The `Chrome`
-component in `packages/ui/src/components/Chrome.tsx`; compact on a PR page
+component in `packages/desktop/src/renderer/src/components/Chrome.tsx`; compact on a PR page
 (`.compact` on the body shrinks `--chrome-h`), and morphed across page
 navigations by the browser's cross-document view transition. Theme choice is
 `data-theme` on the root, stamped before first paint from localStorage;

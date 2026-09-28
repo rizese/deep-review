@@ -24,7 +24,7 @@ import type { PrRef } from "@deep-review/pr";
 import type { AddOptions, PrFacts, PrFailure } from "./registry.js";
 
 /** What a build produced that is worth keeping: everything but the page, which is re-rendered. */
-export interface StoredBuild {
+interface StoredBuild {
   input: SliceExplorerInput;
   /** The PR's head checkout, which the language services read. */
   headDir: string;

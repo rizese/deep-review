@@ -1,6 +1,6 @@
 import { ConfigError, InputError, parseUnifiedDiff } from "@deep-review/pr";
 import { afterEach, describe, expect, it } from "vitest";
-import { runSliceAgent } from "./agent.js";
+import { apiKeyEnvVars, hasApiKeyForModel, runSliceAgent } from "./agent.js";
 import { indexDiff } from "./annotate.js";
 import type { PrContext } from "./types.js";
 
@@ -65,5 +65,35 @@ describe("runSliceAgent", () => {
     }).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(InputError);
     expect((failure as Error).message).toContain("too large to slice in one pass");
+  });
+});
+
+describe("which provider a model id names", () => {
+  /**
+   * The id alone decides where the call goes, so this is the whole of the
+   * routing rule and the only thing standing between a typo and a request
+   * to the wrong provider.
+   */
+  it("sends gpt- to OpenAI, grok- to xAI, and everything else to Anthropic", () => {
+    expect(apiKeyEnvVars("gpt-5.6-sol")).toEqual(["OPENAI_API_KEY"]);
+    expect(apiKeyEnvVars("grok-4")).toEqual(["XAI_API_KEY", "GROK_API_KEY"]);
+    expect(apiKeyEnvVars("claude-sonnet-4.5")).toEqual(["ANTHROPIC_API_KEY"]);
+  });
+
+  it("wants the key of the provider the id names, and no other", () => {
+    const saved = { ...process.env };
+    try {
+      for (const name of ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "XAI_API_KEY", "GROK_API_KEY"]) delete process.env[name];
+      expect(hasApiKeyForModel("gpt-5.6-sol")).toBe(false);
+      // An Anthropic key is no use to an OpenAI model.
+      process.env.ANTHROPIC_API_KEY = "sk-ant";
+      expect(hasApiKeyForModel("gpt-5.6-sol")).toBe(false);
+      expect(hasApiKeyForModel("claude-sonnet-4.5")).toBe(true);
+      // Either of xAI's two names will do.
+      process.env.GROK_API_KEY = "sk-xai";
+      expect(hasApiKeyForModel("grok-4")).toBe(true);
+    } finally {
+      process.env = saved;
+    }
   });
 });

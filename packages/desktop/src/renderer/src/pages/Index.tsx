@@ -1,0 +1,239 @@
+import type { JSX } from "react";
+import { SiGithub } from "@icons-pack/react-simple-icons";
+import { Trash2 } from "lucide-react";
+import type { MouseEvent } from "react";
+import { Button } from "../components/Button.js";
+import { ModelKeyScreen } from "../components/ModelKeyScreen.js";
+import { SignInScreen } from "../components/SignInScreen.js";
+import { SizeBar } from "../components/SizeBar.js";
+import { addPr, forgetPr, parseKey, type PrView } from "../lib/api.js";
+import { usePageReady } from "../components/PageFade.js";
+import { go } from "../lib/route.js";
+import { useHeldPrs } from "../lib/usePrs.js";
+import { useStored } from "../lib/useStored.js";
+import { useModelStatus } from "../lib/useModelStatus.js";
+import { setupGap, useWatchStatus } from "../lib/useWatchStatus.js";
+import styles from "./Index.module.css";
+
+
+const KIND_LABEL = { transient: "network", config: "setup", input: "this PR", build: "build" } as const;
+
+function humanDelay(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 90) return `${s}s`;
+  const m = Math.round(s / 60);
+  if (m < 90) return `${m}m`;
+  return `${Math.round(m / 60)}h`;
+}
+
+function parkedNote(kind: keyof typeof KIND_LABEL): string {
+  switch (kind) {
+    case "config":
+      return "not retried: fix the setup, then retry";
+    case "input":
+      return "not retried: nothing will change until the PR does";
+    case "transient":
+      return "gave up retrying; retry by hand, or it retries when the PR changes";
+    default:
+      return "parked until the PR changes; retry by hand to try again now";
+  }
+}
+
+/** One line under a failed PR: what kind of failure, and what happens next. */
+function failureNote(pr: PrView): string {
+  const f = pr.failure;
+  if (!f) return "";
+  if (f.nextRetryAt !== undefined && !f.parked) {
+    return `${KIND_LABEL[f.kind]} · retrying in ${humanDelay(f.nextRetryAt - Date.now())} (attempt ${f.attempts} so far)`;
+  }
+  return `${KIND_LABEL[f.kind]} · ${parkedNote(f.kind)}`;
+}
+
+function facts(pr: PrView): string {
+  if (pr.state === "ready") return `${pr.slices ?? 0} slices · ${pr.graphs ?? 0} with a walkable call graph`;
+  if (pr.state === "failed") return "";
+  return "slicing and walking call graphs…";
+}
+
+function Card({ pr, hidden }: { pr: PrView; hidden: boolean }): JSX.Element {
+  const last = pr.state === "building" ? (pr.log[pr.log.length - 1] ?? "") : "";
+  const f = facts(pr);
+  const open = (e: MouseEvent): void => {
+    // Anywhere on a card opens its PR; its own links and buttons keep their meaning.
+    if ((e.target as Element).closest("a, button, input, label")) return;
+    go(pr.path);
+  };
+  const retry = (): void => {
+    const ref = parseKey(pr.key);
+    if (ref) void addPr(ref);
+  };
+  const approvedTitle = pr.approvers.length ? `approved by ${pr.approvers.join(", ")}` : "approved";
+  return (
+    <div
+      className={`${styles.row} ${pr.state === "failed" ? styles.failed : ""}`}
+      data-key={pr.key}
+      data-state={pr.state}
+      data-role={pr.role}
+      data-approved={pr.approved ? "true" : "false"}
+      hidden={hidden}
+      onClick={open}
+    >
+      <div>
+        <div className={styles.name}>
+          {pr.key}
+          {pr.author ? ` · ${pr.author}` : ""}
+        </div>
+        <a className={styles.title} href={pr.path}>
+          {pr.title ?? pr.key}
+        </a>
+        {f && <div className={styles.facts}>{f}</div>}
+        {pr.state === "ready" && pr.size && <SizeBar size={pr.size} className={styles.size} />}
+        {pr.error && (
+          <div className={styles.why} data-why>
+            {pr.error}
+          </div>
+        )}
+        {pr.failure && <div className={styles.next}>{failureNote(pr)}</div>}
+        {last && <div className={styles.last}>{last}</div>}
+      </div>
+      <div className={styles.side}>
+        {pr.live && <span className={styles.dot} title="language services warm" />}
+        {pr.draft && <span className={`${styles.pill} ${styles.draft}`}>draft</span>}
+        {pr.approved && (
+          <span className={`${styles.pill} ${styles.approved}`} title={approvedTitle}>
+            approved
+          </span>
+        )}
+        <span className={`${styles.pill} ${pr.state === "failed" ? styles.pillFailed : styles[pr.state]}`}>{pr.state}</span>
+        {pr.state === "failed" && (
+          <Button variant="primary" size="sm" title="Build this PR again now" onClick={retry}>
+            retry
+          </Button>
+        )}
+        <a className={styles.gh} href={pr.prUrl} target="_blank" rel="noopener" title="Open on GitHub" aria-label="Open on GitHub">
+          <SiGithub aria-hidden="true" />
+        </a>
+        <button
+          className={styles.forget}
+          type="button"
+          title="Drop this PR from the server"
+          aria-label="Drop this PR from the server"
+          onClick={() => void forgetPr(pr.key)}
+        >
+          <Trash2 aria-hidden="true" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Signed in, but every search was refused — a file someone wrote by hand
+ * and got wrong. The list still shows whatever the server holds.
+ */
+function BadSearches({ held }: { held: number }): JSX.Element {
+  return (
+    <section className={styles.setup} aria-label="Set up">
+      <div>
+        <div className={styles.setupTitle}>Nothing is being searched for</div>
+        <div className={styles.setupBody}>
+          Every search was refused; a search has to name somebody or somewhere.{" "}
+          {held > 0
+            ? "The PRs below are what the server already holds; the list will not change until one search works."
+            : "Drop a PR link anywhere in this window in the meantime, or paste one."}
+        </div>
+      </div>
+      <Button onClick={() => go("/settings")}>Fix the searches</Button>
+    </section>
+  );
+}
+
+/** The index: every PR the server holds, on two tabs, with approved ones hidden on request. */
+export function Index(): JSX.Element {
+  const { prs, ready } = useHeldPrs();
+  usePageReady(ready);
+  const gap = setupGap(useWatchStatus());
+  // In a browser there is no watcher to wait on, so the terminal is the
+  // only way a PR gets here; in the app it is the other way round.
+  const desktop = typeof window !== "undefined" && Boolean(window.electronAPI);
+  const model = useModelStatus();
+  // Getting started is two steps, and each is the whole page while it
+  // lasts: an account to read PRs from, then a model to read them with.
+  // Neither is a banner over a list that cannot fill yet.
+  const needsSignIn = gap === "token";
+  const needsKey = !needsSignIn && model.status !== null && !model.status.hasKey;
+  const [tabStored, setTab] = useStored("deep-review.tab", "review");
+  const tab = tabStored === "authored" ? "authored" : "review";
+  const [hideStored, setHide] = useStored("deep-review.hideApproved", "false");
+  const hideApproved = hideStored === "true";
+
+  const review = prs.filter((pr) => pr.role !== "authored");
+  const authored = prs.filter((pr) => pr.role === "authored");
+  // Every card is rendered and the off-tab or hidden-approved ones carry
+  // `hidden`, so the list keeps its place in the DOM as tabs and the box
+  // change and a PR stays the same element as its state moves.
+  const onTab = tab === "authored" ? authored : review;
+  const isShown = (pr: PrView): boolean => (pr.role === "authored") === (tab === "authored") && !(hideApproved && pr.approved);
+  const shown = onTab.filter(isShown);
+  const hidden = onTab.length - shown.length;
+
+  if (needsSignIn) return <SignInScreen />;
+  if (needsKey && model.status) return <ModelKeyScreen status={model.status} onDone={model.refresh} />;
+
+  return (
+    <>
+      <main className={styles.page}>
+        {ready && gap === "searches" && <BadSearches held={prs.length} />}
+        <div className={styles.toolbar}>
+          <div className={styles.tabs} role="tablist">
+            <button className={styles.tab} type="button" role="tab" aria-selected={tab === "review"} onClick={() => setTab("review")}>
+              For review<span className={styles.tabCount}>{review.length || ""}</span>
+            </button>
+            <button className={styles.tab} type="button" role="tab" aria-selected={tab === "authored"} onClick={() => setTab("authored")}>
+              My PRs<span className={styles.tabCount}>{authored.length || ""}</span>
+            </button>
+          </div>
+          <label className={styles.toggle}>
+            <input type="checkbox" checked={hideApproved} onChange={(e) => setHide(e.target.checked ? "true" : "false")} /> Hide approved PRs
+          </label>
+        </div>
+        <div className={styles.rows}>
+          {prs.map((pr) => (
+            <Card key={pr.key} pr={pr} hidden={!isShown(pr)} />
+          ))}
+        </div>
+        {ready && prs.length === 0 && !gap && (
+          <div className={styles.empty}>
+            {desktop ? (
+              <>
+                Nothing yet. Deep Review is watching GitHub for the PRs waiting on you; each one appears here as it is built.
+                <div>To read one now, drop its link anywhere in this window, or paste it.</div>
+              </>
+            ) : (
+              <>
+                Nothing loaded yet. Add a PR from any terminal:
+                <div>
+                  <code>pr-review https://github.com/owner/repo/pull/123</code>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+        {ready && prs.length > 0 && shown.length === 0 && tab === "review" && (
+          <div className={styles.empty}>
+            Nothing is waiting on your review.{" "}
+            {hidden > 0 && <span>{`${hidden} approved PR${hidden === 1 ? " is" : "s are"} hidden.`}</span>}
+          </div>
+        )}
+        {ready && prs.length > 0 && shown.length === 0 && tab === "authored" && (
+          <div className={styles.empty}>
+            None of your PRs are open here. {hidden > 0 && <span>{`${hidden} approved PR${hidden === 1 ? " is" : "s are"} hidden.`}</span>}
+            <div>
+              The My PRs tab is a GitHub search; Settings says which one.
+            </div>
+          </div>
+        )}
+      </main>
+    </>
+  );
+}

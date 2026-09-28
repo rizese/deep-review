@@ -1,0 +1,23 @@
+appId: com.rizese.deepreview
+productName: Deep Review
+directories:
+  buildResources: build
+files:
+  - "!**/.vscode/*"
+  - "!src/*"
+  - "!electron.vite.config.{js,ts,mjs,cjs}"
+  - "!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}"
+  - "!{.env,.env.*,.npmrc,pnpm-lock.yaml}"
+asarUnpack:
+  - resources/**
+mac:
+  category: public.app-category.developer-tools
+  entitlementsInherit: build/entitlements.mac.plist
+  notarize: false
+  target:
+    - dmg
+    - zip
+dmg:
+  artifactName: ${productName}-${version}.${ext}
+npmRebuild: false
+publish: null

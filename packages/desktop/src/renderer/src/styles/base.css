@@ -1,0 +1,29 @@
+/* The page under everything. The pool is a component (Pool), mounted once;
+   the bar and the routed page sit in .app. Pages lay their own content out. */
+html { min-height: 100%; background: var(--bg); }
+body {
+  margin: 0; padding: 0; background: transparent; color: var(--ink);
+  font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased;
+}
+* { scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; }
+*:hover { scrollbar-color: var(--scroll-thumb-hover) transparent; }
+code { font-family: var(--mono); font-size: 0.9em; }
+button, input { font: inherit; }
+
+/* The shell: the bar, then the page. On the index the page is as tall as
+   its list and the document scrolls under the sticky bar; over a PR the
+   shell is exactly one viewport and nothing scrolls but the panes. */
+.app { display: flex; flex-direction: column; min-height: 100vh; }
+.compact .app { height: 100vh; overflow: hidden; }
+.page-fade { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* Leaving: the content dims; arriving: it comes up from nothing. The pool
+   and the bar are outside this box and do not take part. */
+.page-fade.out { opacity: 0; transition: opacity 0.16s ease-in; pointer-events: none; }
+/* Not yet ready: nothing to show, so nothing shown; the fade-in waits. */
+.page-fade.waiting { opacity: 0; }
+.page-fade.in { animation: page-in 0.24s ease-out; }
+@keyframes page-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .page-fade.out { transition: none; }
+  .page-fade.in { animation: none; }
+}

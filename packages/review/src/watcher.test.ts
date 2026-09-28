@@ -1,10 +1,10 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { AssignedPr, PrRef } from "@deep-review/pr";
+import type { AssignedPr, PrRef, PrSearch } from "@deep-review/pr";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AddOptions, PrView } from "./registry.js";
-import { watchConfigFile, type WatchConfig, type WatchedRepo } from "./watchConfig.js";
+import { searchesForRepo, watchConfigFile, type WatchConfig } from "./watchConfig.js";
 import {
   parsePrKey,
   planCleanup,
@@ -34,13 +34,19 @@ function assigned(number: number, updatedAt = "2026-09-01T10:00:00Z"): AssignedP
   };
 }
 
-/** Name these repos in watch.json under the test's state dir. */
+/** Narrow watch.json, under the test's state dir, to these repos. */
 function watching(...repos: (string | [string, string])[]): void {
-  const config: WatchConfig = { repos: {} };
+  const config: WatchConfig = { searches: { review: [], authored: [] } };
   for (const entry of repos) {
-    if (typeof entry === "string") config.repos[entry] = {};
-    else config.repos[entry[0]] = { query: entry[1] };
+    const pair = typeof entry === "string" ? searchesForRepo(entry) : searchesForRepo(entry[0], entry[1]);
+    config.searches.review.push(...pair.review);
+    config.searches.authored.push(...pair.authored);
   }
+  writeConfig(config);
+}
+
+/** Write watch.json as given. */
+function writeConfig(config: unknown): void {
   mkdirSync(path.dirname(watchConfigFile()), { recursive: true });
   writeFileSync(watchConfigFile(), JSON.stringify(config));
 }
@@ -112,7 +118,7 @@ describe("pollOnce", () => {
   it("hands new PRs over and remembers them", async () => {
     const handed: number[] = [];
     const state = await pollOnce({
-      list: async () => [assigned(1), assigned(2)],
+      search: async () => [assigned(1), assigned(2)],
       add: async (pr) => {
         handed.push(pr.number);
         return view(pr);
@@ -126,7 +132,7 @@ describe("pollOnce", () => {
   it("hands a PR over with what GitHub said about it: its role and approval", async () => {
     const facts: unknown[] = [];
     await pollOnce({
-      list: async () => [
+      search: async () => [
         { ...assigned(1), role: "authored", author: "me", draft: true },
         { ...assigned(2), approved: true, approvers: ["alex"] },
       ],
@@ -147,7 +153,7 @@ describe("pollOnce", () => {
     const handed: number[] = [];
     const refreshed: [string, unknown][] = [];
     const deps = {
-      list: async () => [assigned(1)],
+      search: async () => [assigned(1)],
       add: async (pr: AssignedPr) => {
         handed.push(pr.number);
         return view(pr);
@@ -159,7 +165,7 @@ describe("pollOnce", () => {
     };
     await pollOnce(deps);
     expect(refreshed).toEqual([]);
-    await pollOnce({ ...deps, list: async () => [{ ...assigned(1), approved: true, approvers: ["alex"] }] });
+    await pollOnce({ ...deps, search: async () => [{ ...assigned(1), approved: true, approvers: ["alex"] }] });
     expect(handed).toEqual([1]);
     expect(refreshed).toEqual([
       ["acme/widgets#1", { role: "review", approved: true, approvers: ["alex"], author: "someone", draft: false, headSha: "h" }],
@@ -169,7 +175,7 @@ describe("pollOnce", () => {
   it("does not hand the same PR over twice across polls", async () => {
     const handed: number[] = [];
     const deps = {
-      list: async () => [assigned(1)],
+      search: async () => [assigned(1)],
       add: async (pr: AssignedPr) => {
         handed.push(pr.number);
         return view(pr);
@@ -183,7 +189,7 @@ describe("pollOnce", () => {
   it("retries next poll when the handover failed", async () => {
     let attempts = 0;
     const deps = {
-      list: async () => [assigned(1)],
+      search: async () => [assigned(1)],
       add: async (pr: AssignedPr) => {
         attempts += 1;
         if (attempts === 1) throw new Error("server down");
@@ -199,9 +205,9 @@ describe("pollOnce", () => {
   });
 
   it("keeps what it knew when GitHub cannot be reached", async () => {
-    await pollOnce({ list: async () => [assigned(1)], add: async (pr) => view(pr) });
+    await pollOnce({ search: async () => [assigned(1)], add: async (pr) => view(pr) });
     const state = await pollOnce({
-      list: async () => {
+      search: async () => {
         throw new Error("offline");
       },
     });
@@ -210,7 +216,7 @@ describe("pollOnce", () => {
   });
 
   it("writes state as readable JSON under the state dir", async () => {
-    await pollOnce({ list: async () => [assigned(7)], add: async (pr) => view(pr) });
+    await pollOnce({ search: async () => [assigned(7)], add: async (pr) => view(pr) });
     expect(watcherStateFile()).toBe(path.join(home, "watcher.json"));
     expect(JSON.parse(readFileSync(watcherStateFile(), "utf8")).seen).toHaveProperty(
       "acme/widgets#7",
@@ -222,7 +228,7 @@ describe("pollOnce", () => {
     // concurrently building PRs on top of each other.
     let handed: AddOptions | undefined;
     await pollOnce({
-      list: async () => [assigned(1)],
+      search: async () => [assigned(1)],
       add: async (pr, options) => {
         handed = options;
         return view(pr);
@@ -371,7 +377,7 @@ describe("pollOnce cleanup", () => {
   /** Hand PR 1 over on one poll, so a later poll has something to clean up. */
   async function handOver(): Promise<void> {
     await pollOnce({
-      list: async () => [assigned(1)],
+      search: async () => [assigned(1)],
       add: async (pr) => view(pr),
       check: async () => OPEN,
     });
@@ -382,7 +388,7 @@ describe("pollOnce cleanup", () => {
     await handOver();
     const removed: string[] = [];
     const state = await pollOnce({
-      list: async () => [],
+      search: async () => [],
       check: async () => MERGED,
       remove: async (key) => {
         removed.push(key);
@@ -399,7 +405,7 @@ describe("pollOnce cleanup", () => {
     await handOver();
     const removed: string[] = [];
     await pollOnce({
-      list: async () => [],
+      search: async () => [],
       check: async () => CLOSED,
       remove: async (key) => {
         removed.push(key);
@@ -413,7 +419,7 @@ describe("pollOnce cleanup", () => {
     await handOver();
     const removed: string[] = [];
     const state = await pollOnce({
-      list: async () => [],
+      search: async () => [],
       check: async () => OPEN,
       remove: async (key) => {
         removed.push(key);
@@ -430,7 +436,7 @@ describe("pollOnce cleanup", () => {
     await handOver();
     const removed: string[] = [];
     const state = await pollOnce({
-      list: async () => [],
+      search: async () => [],
       check: async () => {
         throw new Error("GitHub 502");
       },
@@ -449,7 +455,7 @@ describe("pollOnce cleanup", () => {
     // nothing, and one that will not answer is not this poll's to fix.
     await handOver();
     const state = await pollOnce({
-      list: async () => [],
+      search: async () => [],
       check: async () => MERGED,
       remove: async () => {
         throw new Error("connection refused");
@@ -461,7 +467,7 @@ describe("pollOnce cleanup", () => {
   it("does not hold a PR whose handover failed", async () => {
     // Nothing reached the server, so there is nothing there to clean up.
     const state = await pollOnce({
-      list: async () => [assigned(1)],
+      search: async () => [assigned(1)],
       add: async () => {
         throw new Error("server down");
       },
@@ -471,7 +477,7 @@ describe("pollOnce cleanup", () => {
   });
 });
 
-describe("pollOnce across repos", () => {
+describe("pollOnce across searches", () => {
   let home: string;
 
   beforeEach(() => {
@@ -489,17 +495,30 @@ describe("pollOnce across repos", () => {
     return { ...assigned(number), owner, repo: name, htmlUrl: `https://github.com/${repo}/pull/${number}` };
   }
 
-  /** A fake GitHub holding PRs for several repos, remembering what it was asked. */
+  /**
+   * A fake GitHub holding PRs by repo, answering only what a search asks
+   * for: a query naming `repo:x/y` gets x/y's PRs, and a query naming no
+   * repo gets everything — which is exactly what the real search does, and
+   * why an unbounded one is refused before it is ever sent.
+   */
   function github(prs: Record<string, AssignedPr[]>) {
-    const asked: WatchedRepo[] = [];
-    const list = async (repo: WatchedRepo): Promise<AssignedPr[]> => {
-      asked.push(repo);
-      return prs[repo.repo] ?? [];
+    const asked: PrSearch[] = [];
+    const search = async (searches: PrSearch[]): Promise<AssignedPr[]> => {
+      asked.push(...searches);
+      const found = new Map<string, AssignedPr>();
+      for (const one of searches) {
+        const named = /repo:(\S+)/.exec(one.query)?.[1];
+        for (const [repo, list] of Object.entries(prs)) {
+          if (named && named !== repo) continue;
+          for (const pr of list) found.set(`${pr.owner}/${pr.repo}#${pr.number}`, { ...pr, role: one.role });
+        }
+      }
+      return [...found.values()];
     };
-    return { asked, list };
+    return { asked, search };
   }
 
-  it("polls each configured repo with its own query and holds PRs from all of them", async () => {
+  it("runs every configured search in one call and holds what they all find", async () => {
     watching(["acme/widgets", "is:open is:pr review-requested:@me"], ["acme/gadgets", "is:open is:pr label:needs-review"]);
     const gh = github({
       "acme/widgets": [inRepo("acme/widgets", 1)],
@@ -507,28 +526,27 @@ describe("pollOnce across repos", () => {
     });
     const handed: string[] = [];
     const state = await pollOnce({
-      list: gh.list,
+      search: gh.search,
       add: async (pr) => {
         handed.push(`${pr.owner}/${pr.repo}#${pr.number}`);
         return view(pr);
       },
       check: async () => OPEN,
     });
-    expect(gh.asked).toEqual([
-      { repo: "acme/widgets", query: "is:open is:pr review-requested:@me" },
-      { repo: "acme/gadgets", query: "is:open is:pr label:needs-review" },
+    expect(gh.asked.filter((one) => one.role === "review").map((one) => one.query)).toEqual([
+      "is:open is:pr review-requested:@me repo:acme/widgets",
+      "is:open is:pr label:needs-review repo:acme/gadgets",
     ]);
     expect(handed.sort()).toEqual(["acme/gadgets#9", "acme/widgets#1"]);
     expect(Object.keys(state.seen).sort()).toEqual(["acme/gadgets#9", "acme/widgets#1"]);
     expect(Object.keys(state.held).sort()).toEqual(["acme/gadgets#9", "acme/widgets#1"]);
   });
 
-  it("never asks about a repo the file does not name", async () => {
-    // The incident this file exists for: with no repo configured, the old
-    // watcher asked for every PR the token could see, and six from a
-    // personal repo nobody meant to watch landed on the server. Now a repo
-    // is queried only by being named — the fake GitHub has PRs waiting in
-    // elsewhere/panoply, and is never asked for them.
+  it("asks for nothing a search did not name", async () => {
+    // The incident the old repo list existed for: an unbounded search
+    // returns every PR the token can see, and six from a personal repo
+    // nobody meant to watch landed on the server. Narrowing is now the
+    // search's job, and a narrowed one reaches no further than it says.
     watching("acme/widgets");
     const gh = github({
       "acme/widgets": [inRepo("acme/widgets", 1)],
@@ -536,106 +554,98 @@ describe("pollOnce across repos", () => {
     });
     const handed: string[] = [];
     const state = await pollOnce({
-      list: gh.list,
+      search: gh.search,
       add: async (pr) => {
         handed.push(`${pr.owner}/${pr.repo}#${pr.number}`);
         return view(pr);
       },
       check: async () => OPEN,
     });
-    expect(gh.asked.map((repo) => repo.repo)).toEqual(["acme/widgets"]);
+    expect(gh.asked.every((one) => one.query.includes("repo:acme/widgets"))).toBe(true);
     expect(handed).toEqual(["acme/widgets#1"]);
     expect(Object.keys(state.held)).toEqual(["acme/widgets#1"]);
   });
 
-  it("uses the default query for a repo that names none", async () => {
-    // Opting a repo in should take nothing but its name; the query is the
-    // library's business unless the entry says otherwise.
-    watching("acme/widgets");
+  it("asks both of the default questions when there is no file", async () => {
+    // A fresh install has no file, and that no longer means "watch
+    // nothing": it means the searches that name you. They are bound by
+    // `@me`, so the widest they can reach is your own PRs.
     const gh = github({});
-    await pollOnce({ list: gh.list, check: async () => OPEN });
-    expect(gh.asked).toEqual([{ repo: "acme/widgets" }]);
-  });
-
-  it("polls nothing, and says so, when there is no config file", async () => {
-    // Not an error: a fresh install has no file. But not silence either,
-    // and above all not "everything" — the absence of a scope used to mean
-    // the widest one, and that is the reading this removes.
-    const gh = github({ "elsewhere/panoply": [inRepo("elsewhere/panoply", 3)] });
     const messages: string[] = [];
-    const state = await pollOnce({ list: gh.list, onProgress: (m) => messages.push(m) });
-    expect(gh.asked).toEqual([]);
-    expect(messages.join("\n")).toMatch(/Nothing to watch/);
-    expect(messages.join("\n")).toContain(watchConfigFile());
+    const state = await pollOnce({ search: gh.search, onProgress: (m) => messages.push(m) });
+    const queries = gh.asked.map((one) => one.query);
+    expect(queries.some((q) => q.includes("assignee:@me"))).toBe(true);
+    expect(queries.some((q) => q.includes("review-requested:@me"))).toBe(true);
+    expect(gh.asked.filter((one) => one.role === "authored").map((one) => one.query)).toEqual([
+      "is:open is:pr archived:false author:@me",
+    ]);
     expect(state.lastError).toBeUndefined();
-    expect(state.seen).toEqual({});
   });
 
-  it("polls nothing, and says so, when the file lists no repos", async () => {
-    writeFileSync(watchConfigFile(), JSON.stringify({ repos: {} }));
-    const gh = github({ "elsewhere/panoply": [inRepo("elsewhere/panoply", 3)] });
+  it("reads an old repo-list file as the searches it stood for, and says so", async () => {
+    // Upgrading must watch what it watched yesterday, not suddenly
+    // everything; the repos become repo-scoped searches.
+    writeConfig({ repos: { "acme/widgets": {} } });
+    const gh = github({ "acme/widgets": [inRepo("acme/widgets", 1)], "elsewhere/panoply": [inRepo("elsewhere/panoply", 3)] });
     const messages: string[] = [];
-    await pollOnce({ list: gh.list, onProgress: (m) => messages.push(m) });
-    expect(gh.asked).toEqual([]);
-    expect(messages.join("\n")).toMatch(/Nothing to watch/);
+    await pollOnce({ search: gh.search, add: async (pr) => view(pr), check: async () => OPEN, onProgress: (m) => messages.push(m) });
+    expect(gh.asked.every((one) => one.query.includes("repo:acme/widgets"))).toBe(true);
+    expect(messages.join("\n")).toMatch(/still lists repos/);
   });
 
-  it("survives a corrupt config file, watching nothing and saying why", async () => {
-    // A typo in the file must not take the watcher down: a crashed watcher
-    // also stops removing merged PRs from the server. And it must not be
-    // read as "no scope", which used to mean the widest scope.
+  it("survives a corrupt config file, saying why and falling back to the searches that name you", async () => {
+    // A typo must not take the watcher down: a crashed watcher also stops
+    // removing merged PRs from the server.
     writeFileSync(watchConfigFile(), "{ this is not json");
-    const gh = github({ "elsewhere/panoply": [inRepo("elsewhere/panoply", 3)] });
+    const gh = github({});
     const messages: string[] = [];
-    const state = await pollOnce({ list: gh.list, onProgress: (m) => messages.push(m) });
-    expect(gh.asked).toEqual([]);
+    const state = await pollOnce({ search: gh.search, onProgress: (m) => messages.push(m) });
     expect(messages.join("\n")).toMatch(/could not be read/);
+    expect(gh.asked.some((one) => one.query.includes("@me"))).toBe(true);
     expect(state.lastError).toBeUndefined();
   });
 
-  it("skips a repo whose query names a repo, and polls the rest", async () => {
-    // A second repo: qualifier widens a GitHub search rather than narrowing
-    // it, so an entry that carries one could reach into a repo the file
-    // never named. It is left out, with a note, and the others go ahead.
-    watching(["acme/widgets", "is:open repo:elsewhere/panoply"], "acme/gadgets");
+  it("skips a search bound to nobody and nowhere, and runs the rest", async () => {
+    // Left in, it would answer with every PR the token can see.
+    writeConfig({ searches: { review: ["is:open is:pr", "is:open is:pr repo:acme/gadgets"], authored: [] } });
     const gh = github({});
     const messages: string[] = [];
-    await pollOnce({ list: gh.list, onProgress: (m) => messages.push(m) });
-    expect(gh.asked.map((repo) => repo.repo)).toEqual(["acme/gadgets"]);
-    expect(messages.join("\n")).toMatch(/acme\/widgets: its query names a repo/);
+    await pollOnce({ search: gh.search, onProgress: (m) => messages.push(m) });
+    expect(gh.asked.map((one) => one.query)).toEqual(["is:open is:pr repo:acme/gadgets"]);
+    expect(messages.join("\n")).toMatch(/names nobody and nowhere/);
   });
 
-  it("keeps what it knew when one repo's query fails, rather than emptying that repo", async () => {
-    // Partial results would make the failed repo look emptied: its PRs would
-    // leave `seen` for a GitHub hiccup, then re-dispatch when it came back.
-    watching("acme/widgets", "acme/gadgets");
+  it("keeps what it knew when the poll fails, rather than emptying the list", async () => {
+    // Partial results would make PRs look gone: they would leave `seen` for
+    // a GitHub hiccup, then re-dispatch when it came back.
+    watching("acme/widgets");
     await pollOnce({
-      list: async (repo) => (repo.repo === "acme/widgets" ? [inRepo("acme/widgets", 1)] : []),
+      search: async () => [inRepo("acme/widgets", 1)],
       add: async (pr) => view(pr),
       check: async () => OPEN,
     });
     const state = await pollOnce({
-      list: async (repo) => {
-        if (repo.repo === "acme/gadgets") throw new Error("422");
-        return [inRepo("acme/widgets", 1)];
+      search: async () => {
+        throw new Error("422");
       },
     });
     expect(state.lastError).toBe("422");
     expect(Object.keys(state.seen)).toEqual(["acme/widgets#1"]);
   });
 
-  it("still cleans up held PRs when the file has since been emptied", async () => {
-    // A PR handed over is on the server whatever the file now says; taking
-    // its repo out of the file should not strand its page there forever.
+  it("still cleans up held PRs when the searches no longer find them", async () => {
+    // A PR handed over is on the server whatever the file now says;
+    // narrowing the search should not strand its page there forever.
     watching("acme/widgets");
     await pollOnce({
-      list: async () => [inRepo("acme/widgets", 1)],
+      search: async () => [inRepo("acme/widgets", 1)],
       add: async (pr) => view(pr),
       check: async () => OPEN,
     });
-    writeFileSync(watchConfigFile(), JSON.stringify({ repos: {} }));
+    watching("acme/gadgets");
     const removed: string[] = [];
     const state = await pollOnce({
+      search: async () => [],
       check: async () => MERGED,
       remove: async (key) => {
         removed.push(key);

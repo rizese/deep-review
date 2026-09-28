@@ -22,6 +22,7 @@ import { startNavServer, VERSION, type NavServer } from "./serve.js";
 import { fileStore } from "./store.js";
 
 export { logFile, prsDir, stateDir } from "./paths.js";
+export type { NavServer } from "./serve.js";
 
 interface ServerLock {
   pid: number;
@@ -153,6 +154,12 @@ export interface RunDaemonOptions {
   port?: number | undefined;
   concurrency?: number | undefined;
   onProgress?: ((message: string) => void) | undefined;
+  /** The client app's build to serve; defaults to the desktop renderer output beside this checkout. */
+  uiDir?: string | undefined;
+  /** The build worker script, when this code is bundled and the worker is not beside it. */
+  workerPath?: string | undefined;
+  /** Environment for build workers, e.g. ELECTRON_RUN_AS_NODE when the host is Electron. */
+  workerEnv?: NodeJS.ProcessEnv | undefined;
 }
 
 /**
@@ -170,7 +177,7 @@ export async function runDaemon(options: RunDaemonOptions = {}): Promise<NavServ
     startNavServer({
       // Each build in its own child process: the server stays answerable
       // while a clone or a language service runs for minutes.
-      build: forkBuild(),
+      build: forkBuild({ workerPath: options.workerPath, env: options.workerEnv }),
       // A re-added PR is only trusted while its head has not moved.
       currentHeadSha: async (ref) => (await fetchPrInfo(ref)).headSha,
       persistence: {
@@ -181,7 +188,7 @@ export async function runDaemon(options: RunDaemonOptions = {}): Promise<NavServ
         }),
       },
       onRemoved: (removed, remaining) => retireCheckouts(removed, remaining, options.onProgress ?? (() => {})),
-      uiDir: uiDist(),
+      uiDir: options.uiDir ?? uiDist(),
       port,
       ...(options.concurrency !== undefined ? { concurrency: options.concurrency } : {}),
       ...(options.onProgress ? { onProgress: options.onProgress } : {}),
